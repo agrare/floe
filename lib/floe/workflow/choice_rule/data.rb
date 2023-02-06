@@ -46,6 +46,40 @@ module Floe
           end
         end
 
+        def to_dot_label
+          operator =
+            case compare_key
+            when "IsNull", "IsPresent", "IsNumeric",
+                "IsString", "IsBoolean", "IsTimestamp"
+              compare_key
+            when "StringEquals", "StringEqualsPath",
+                "NumericEquals", "NumericEqualsPath",
+                "BooleanEquals", "BooleanEqualsPath",
+                "TimestampEquals", "TimestampEqualsPath"
+              "=="
+            when "StringLessThan", "StringLessThanPath",
+                "NumericLessThan", "NumericLessThanPath",
+                "TimestampLessThan", "TimestampLessThanPath"
+              "<"
+            when "StringGreaterThan", "StringGreaterThanPath",
+                "NumericGreaterThan", "NumericGreaterThanPath",
+                "TimestampGreaterThan", "TimestampGreaterThanPath"
+              ">"
+            when "StringLessThanEquals", "StringLessThanEqualsPath",
+                "NumericLessThanEquals", "NumericLessThanEqualsPath",
+                "TimestampLessThanEquals", "TimestampLessThanEqualsPath"
+              "<="
+            when "StringGreaterThanEquals", "StringGreaterThanEqualsPath",
+                "NumericGreaterThanEquals", "NumericGreaterThanEqualsPath",
+                "TimestampGreaterThanEquals", "TimestampGreaterThanEqualsPath"
+              ">="
+            when "StringMatches"
+              "matches"
+            end
+
+          [variable, operator, payload[compare_key]&.inspect].compact.join(" ")
+        end
+
         private
 
         def validate!(value)
