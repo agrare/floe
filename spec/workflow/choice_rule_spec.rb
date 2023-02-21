@@ -440,4 +440,112 @@ RSpec.describe Floe::Workflow::ChoiceRule do
       end
     end
   end
+
+  describe "#to_dot_label" do
+    let(:subject) { described_class.build(payload) }
+
+    context "Boolean Expression" do
+      it "Not" do
+        payload = {"Not" => {"Variable" => "$.foo", "StringEquals" => "bar"}, "Next" => "FirstMatchState"}
+        expect(described_class.build(payload).to_dot_label).to eq("!($.foo == \"bar\")")
+      end
+
+      it "And" do
+        payload = {"And" => [{"Variable" => "$.foo", "StringEquals" => "foo"}, {"Variable" => "$.bar", "StringEquals" => "bar"}], "Next" => "FirstMatchState"}
+        expect(described_class.build(payload).to_dot_label).to eq("$.foo == \"foo\" && $.bar == \"bar\"")
+      end
+
+      it "Or" do
+        payload = {"Or" => [{"Variable" => "$.foo", "StringEquals" => "foo"}, {"Variable" => "$.bar", "StringEquals" => "foo"}], "Next" => "FirstMatchState"}
+        expect(described_class.build(payload).to_dot_label).to eq("$.foo == \"foo\" || $.bar == \"foo\"")
+      end
+    end
+
+    context "Data-Test Expression" do
+      it "IsNull" do
+        payload = {"Variable" => "$.foo", "IsNull" => true}
+        expect(described_class.build(payload).to_dot_label).to eq("$.foo IsNull true")
+      end
+
+      it "IsPresent" do
+        payload = {"Variable" => "$.foo", "IsPresent" => true}
+        expect(described_class.build(payload).to_dot_label).to eq("$.foo IsPresent true")
+      end
+
+      it "IsNumeric" do
+        payload = {"Variable" => "$.foo", "IsNumeric" => true}
+        expect(described_class.build(payload).to_dot_label).to eq("$.foo IsNumeric true")
+      end
+
+      it "IsString" do
+        payload = {"Variable" => "$.foo", "IsString" => true}
+        expect(described_class.build(payload).to_dot_label).to eq("$.foo IsString true")
+      end
+
+      it "IsBoolean" do
+        payload = {"Variable" => "$.foo", "IsBoolean" => true}
+        expect(described_class.build(payload).to_dot_label).to eq("$.foo IsBoolean true")
+      end
+
+      it "IsTimestamp" do
+        payload = {"Variable" => "$.foo", "IsTimestamp" => true}
+        expect(described_class.build(payload).to_dot_label).to eq("$.foo IsTimestamp true")
+      end
+
+      it "StringEquals" do
+        payload = {"Variable" => "$.foo", "StringEquals" => "bar"}
+        expect(described_class.build(payload).to_dot_label).to eq("$.foo == \"bar\"")
+      end
+
+      it "StringEqualsPath" do
+        payload = {"Variable" => "$.foo", "StringEquals" => "$.bar"}
+        expect(described_class.build(payload).to_dot_label).to eq("$.foo == \"$.bar\"")
+      end
+
+      it "NumericLessThan" do
+        payload = {"Variable" => "$.foo", "NumericLessThan" => 1}
+        expect(described_class.build(payload).to_dot_label).to eq("$.foo < 1")
+      end
+
+      it "NumericLessThanPath" do
+        payload = {"Variable" => "$.foo", "NumericLessThanPath" => "$.bar"}
+        expect(described_class.build(payload).to_dot_label).to eq("$.foo < \"$.bar\"")
+      end
+
+      it "NumericGreaterThan" do
+        payload = {"Variable" => "$.foo", "NumericGreaterThan" => 1}
+        expect(described_class.build(payload).to_dot_label).to eq("$.foo > 1")
+      end
+
+      it "NumericGreaterThanPath" do
+        payload = {"Variable" => "$.foo", "NumericGreaterThanPath" => "$.bar"}
+        expect(described_class.build(payload).to_dot_label).to eq("$.foo > \"$.bar\"")
+      end
+
+      it "NumericLessThanEquals" do
+        payload = {"Variable" => "$.foo", "NumericLessThanEquals" => 1}
+        expect(described_class.build(payload).to_dot_label).to eq("$.foo <= 1")
+      end
+
+      it "NumericLessThanEqualsPath" do
+        payload = {"Variable" => "$.foo", "NumericLessThanEqualsPath" => "$.bar"}
+        expect(described_class.build(payload).to_dot_label).to eq("$.foo <= \"$.bar\"")
+      end
+
+      it "NumericGreaterThanEquals" do
+        payload = {"Variable" => "$.foo", "NumericGreaterThanEquals" => 1}
+        expect(described_class.build(payload).to_dot_label).to eq("$.foo >= 1")
+      end
+
+      it "NumericGreaterThanEqualsPath" do
+        payload = {"Variable" => "$.foo", "NumericGreaterThanEqualsPath" => "$.bar"}
+        expect(described_class.build(payload).to_dot_label).to eq("$.foo >= \"$.bar\"")
+      end
+
+      it "StringMatches" do
+        payload = {"Variable" => "$.foo", "StringMatches" => "bar"}
+        expect(described_class.build(payload).to_dot_label).to eq("$.foo matches \"bar\"")
+      end
+    end
+  end
 end
