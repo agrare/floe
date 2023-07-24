@@ -21,6 +21,10 @@ module Floe
         def status
           "errored"
         end
+
+        def terminal?
+          true
+        end
       end
     end
   end

@@ -9,6 +9,7 @@ module Floe
         def initialize(workflow, name, payload)
           super
 
+          @end         = payload["End"]
           @next        = payload["Next"]
           @result      = payload["Result"]
 
@@ -24,6 +25,10 @@ module Floe
           output = output_path.value(context, output)
 
           [@next, output]
+        end
+
+        def terminal?
+          !!@end
         end
       end
     end

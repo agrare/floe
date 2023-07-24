@@ -23,6 +23,10 @@ module Floe
 
           [next_state, output]
         end
+
+        def terminal?
+          false
+        end
       end
     end
   end

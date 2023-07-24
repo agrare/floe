@@ -9,6 +9,7 @@ module Floe
         def initialize(workflow, name, payload)
           super
 
+          @end     = payload["End"]
           @next    = payload["Next"]
           @seconds = payload["Seconds"].to_i
 
@@ -21,6 +22,10 @@ module Floe
           sleep(seconds)
           output = output_path.value(context, input)
           [@next, output]
+        end
+
+        def terminal?
+          !!@end
         end
       end
     end

@@ -25,13 +25,12 @@ module Floe
         @workflow = workflow
         @name     = name
         @payload  = payload
-        @end      = !!payload["End"]
         @type     = payload["Type"]
         @comment  = payload["Comment"]
       end
 
-      def end?
-        @end
+      def terminal?
+        raise NotImplementedError
       end
 
       def context
@@ -39,7 +38,7 @@ module Floe
       end
 
       def status
-        end? ? "success" : "running"
+        terminal? ? "success" : "running"
       end
     end
   end

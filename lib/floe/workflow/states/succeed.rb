@@ -15,6 +15,10 @@ module Floe
         def run!(input)
           [nil, input]
         end
+
+        def terminal?
+          true
+        end
       end
     end
   end

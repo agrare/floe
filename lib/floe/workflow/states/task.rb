@@ -11,6 +11,7 @@ module Floe
         def initialize(workflow, name, payload)
           super
 
+          @end               = payload["End"]
           @heartbeat_seconds = payload["HeartbeatSeconds"]
           @next              = payload["Next"]
           @resource          = payload["Resource"]
@@ -42,6 +43,10 @@ module Floe
           raise if catcher.nil?
 
           [catcher.next, output]
+        end
+
+        def terminal?
+          !!@end
         end
 
         private
