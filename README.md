@@ -102,14 +102,12 @@ workflow2 = Floe::Workflow.load("workflow2.asl")
 
 running_workflows = [workflow1, workflow2]
 until running_workflows.empty?
-  # Wait for any of the running workflows to be ready (up to the timeout)
-  ready_workflows = Floe::Workflow.wait(running_workflows)
-  # Step through the ready workflows until they would block
-  ready_workflows.each do |workflow|
-    loop while workflow.step_nonblock == 0
-  end
+  # run the states in each of the workflows that will not block
+  ready_workflows.each(&:run_nonblock)
   # Remove any finished workflows from the list of running_workflows
   running_workflows.reject!(&:end?)
+  # if there is more work to do, give the cpu a rest.
+  sleep(1) unless running_workflows.empty?
 end
 ```
 

@@ -29,11 +29,28 @@ module Floe
         @comment  = payload["Comment"]
       end
 
-      def run!(input)
-        start(input)
-        sleep(1) while running?
+      def run_nonblock!
+        unless started?
+          context.step_nonblock_start
+          start(context.input)
+        end
+
+        return Errno::EAGAIN if running?
+
         finish
-        [context.next_state, context.output]
+
+        0
+      end
+
+      def run!(timeout: :forever)
+        start = Time.now.utc
+
+        while run_nonblock! == Errno::EAGAIN
+          return Errno::EAGAIN if timeout != :forever && (timeout.zero? || Time.now.utc - start > timeout)
+          sleep(1)
+        end
+
+        0
       end
 
       def start(_input)
@@ -41,7 +58,7 @@ module Floe
       end
 
       def finish
-        context.state["FinishedTime"] ||= Time.now.utc
+        context.step_nonblock_finish
       end
 
       def context
@@ -49,11 +66,16 @@ module Floe
       end
 
       def started?
-        context.state.key?("EnteredTime")
+        context.state_started?
       end
 
       def finished?
-        context.state.key?("FinishedTime")
+        context.state_finished?
+      end
+
+      # drop?
+      def step_nonblock_ready?
+        !started? || !running?
       end
     end
   end

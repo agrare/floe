@@ -37,6 +37,35 @@ module Floe
         @context["State"]
       end
 
+      def state_started?
+        state.key?("EnteredTime")
+      end
+
+      def state_finished?
+        state.key?("FinishedTime")
+      end
+
+      # rename - kept name to explain
+      def step_nonblock_start
+        start_time = Time.now.utc
+
+        execution["StartTime"] ||= start_time
+        state["Guid"]            = SecureRandom.uuid
+        state["EnteredTime"]     = start_time
+
+      end
+
+      # rename - kept name to explain
+      def step_nonblock_finish
+        state["FinishedTime"] ||= Time.now.utc
+        state["Duration"]    = state["FinishedTime"] - state["EnteredTime"]
+        execution["EndTime"] = Time.now.utc if next_state.nil?
+
+        state_history << state
+
+        state = {"Name" => next_state, "Input" => output} if next_state
+      end
+
       def input
         state["Input"]
       end

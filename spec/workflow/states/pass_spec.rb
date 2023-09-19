@@ -1,6 +1,8 @@
 RSpec.describe Floe::Workflow::States::Pass do
-  let(:workflow) { Floe::Workflow.load(GEM_ROOT.join("examples/workflow.asl")) }
+  let(:context)  { Floe::Workflow::Context.new(input: input) }
+  let(:workflow) { Floe::Workflow.load(GEM_ROOT.join("examples/workflow.asl"), context) }
   let(:state)    { workflow.states_by_name["PassState"] }
+  let(:input)    { {} }
 
   describe "#end?" do
     it "is non-terminal" do
@@ -11,9 +13,9 @@ RSpec.describe Floe::Workflow::States::Pass do
 
   describe "#run!" do
     it "sets the result to the result path" do
-      next_state, output = state.run!({})
-      expect(output["result"]).to include(state.result)
-      expect(next_state).to eq("WaitState")
+      state.run!(context.input)
+      expect(context.output["result"]).to include(state.result)
+      expect(context.next_state).to eq("WaitState")
     end
   end
 end

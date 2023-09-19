@@ -17,6 +17,13 @@ RSpec.describe Floe::Workflow do
       expect(context.running?).to eq(false)
       expect(context.ended?).to eq(false)
     end
+
+    # I would prefer this not be here, but it is, so lets test it
+    it "sets context to proper start_at" do
+      workflow = make_workflow(input, {"FirstState" => {"Type" => "Succeed"}})
+      expect(context.state_name).to eq("FirstState")
+      expect(context.input).to eq(input)
+    end
   end
 
   describe "#run!" do
