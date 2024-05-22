@@ -4,6 +4,24 @@ module Floe
   class Workflow
     class ChoiceRule
       class Data < Floe::Workflow::ChoiceRule
+        attr_reader :compare_key
+
+        COMPARE_KEYS = (
+          %w[IsNull IsPresent IsNumeric IsString IsBoolean IsTimestamp StringMatches] +
+          %w[String Numeric Boolean Timestamp].flat_map { |k| ["#{k}Equals", "#{k}EqualsPath"] } +
+          %w[String Numeric Timestamp].flat_map { |k| %w[LessThan GreaterThan LessThanEquals GreaterThanEquals].flat_map { |x| ["#{k}#{x}", "#{k}#{x}Path"] } }
+        ).freeze
+
+        def initialize(*)
+          super
+
+          compare_keys = payload.keys & COMPARE_KEYS
+          raise Floe::InvalidWorkflowError, "Data-test Expression Choice Rule must have a compare key"        if compare_keys.empty?
+          raise Floe::InvalidWorkflowError, "Data-test Expression Choice Rule must have only one compare key" if compare_keys.size != 1
+
+          @compare_key = compare_keys.first
+        end
+
         def true?(context, input)
           lhs = variable_value(context, input)
           rhs = compare_value(context, input)
@@ -78,10 +96,6 @@ module Floe
           true
         rescue TypeError, Date::Error
           false
-        end
-
-        def compare_key
-          @compare_key ||= payload.keys.detect { |key| key.match?(/^(IsNull|IsPresent|IsNumeric|IsString|IsBoolean|IsTimestamp|String|Numeric|Boolean|Timestamp)/) }
         end
 
         def compare_value(context, input)
