@@ -178,7 +178,7 @@ module Floe
     private
 
     def step!
-      next_state = {"Name" => context.next_state}
+      next_state = {"Name" => context.next_state, "PreviousStateGuid" => context.state["Guid"]}
 
       # if rerunning due to an error (and we are using Retry)
       if context.state_name == context.next_state && context.failed? && context.state.key?("Retrier")
