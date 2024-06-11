@@ -121,9 +121,14 @@ module Floe
 
       result = current_state.run_nonblock!
 
-      if context.state_finished?
-        step_next
-        end_workflow
+      # if it completed the step
+      if result == 0
+        context.state_history << context.state
+        if context.next_state.nil?
+          end_workflow
+        else
+          step_next
+        end
       end
 
       result
@@ -174,8 +179,6 @@ module Floe
     # State#run_nonblock! already called running? via State#ready? and
     # called State#finished -- which is what Context#state_finished? is detecting
     def end_workflow
-      return unless context.state_finished? && context.next_state.nil?
-
       context.execution["EndTime"] = context.state["FinishedTime"]
     end
 
@@ -187,10 +190,6 @@ module Floe
     private
 
     def step_next
-      context.state_history << context.state
-
-      return if context.next_state.nil?
-
       next_state = {"Name" => context.next_state}
 
       # if rerunning due to an error (and we are using Retry)

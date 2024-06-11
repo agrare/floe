@@ -44,6 +44,7 @@ module Floe
         end
       end
 
+      # @return for incomplete Errno::EAGAIN, for completed 0
       def run_nonblock!
         start(context.input) unless started?
         return Errno::EAGAIN unless ready?
