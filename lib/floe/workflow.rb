@@ -165,6 +165,7 @@ module Floe
 
       context.state["Name"] = start_at
       context.state["Input"] = context.execution["Input"].dup
+      context.state["Guid"] = SecureRandom.uuid
       context.execution["StartTime"] = Time.now.utc.iso8601
 
       self
@@ -178,7 +179,7 @@ module Floe
     private
 
     def step!
-      next_state = {"Name" => context.next_state, "PreviousStateGuid" => context.state["Guid"]}
+      next_state = {"Name" => context.next_state, "Guid" => SecureRandom.uuid, "PreviousStateGuid" => context.state["Guid"]}
 
       # if rerunning due to an error (and we are using Retry)
       if context.state_name == context.next_state && context.failed? && context.state.key?("Retrier")

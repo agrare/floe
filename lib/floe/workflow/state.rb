@@ -53,7 +53,6 @@ module Floe
       end
 
       def start(_input)
-        context.state["Guid"]        = SecureRandom.uuid
         context.state["EnteredTime"] = Time.now.utc.iso8601
 
         logger.info("Running state: [#{long_name}] with input [#{context.input}]...")
