@@ -191,9 +191,6 @@ module Floe
       context.state = next_state
     end
 
-    # Avoiding State#running? because that is potentially expensive.
-    # State#run_nonblock! already called running? via State#ready? and
-    # called State#finished -- which is what Context#state_finished? is detecting
     def end_workflow!
       context.execution["EndTime"] = context.state["FinishedTime"]
     end
