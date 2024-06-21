@@ -1,6 +1,6 @@
 RSpec.describe Floe::Workflow::States::Fail do
   let(:input)    { {} }
-  let(:ctx)      { Floe::Workflow::Context.new(:input => input) }
+  let(:ctx)      { Floe::Workflow::Context.new(:input => input.to_json) }
   let(:state)    { workflow.start_workflow.current_state }
   let(:workflow) do
     make_workflow(

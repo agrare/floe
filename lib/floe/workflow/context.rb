@@ -9,9 +9,7 @@ module Floe
       # @param input [Hash] (default: {})
       def initialize(context = nil, input: nil, credentials: {})
         context = JSON.parse(context) if context.kind_of?(String)
-
-        input ||= {}
-        input = JSON.parse(input) if input.kind_of?(String)
+        input   = JSON.parse(input || "{}")
 
         @context = context || {}
         self["Execution"]          ||= {}
@@ -23,7 +21,7 @@ module Floe
 
         @credentials = credentials || {}
       rescue JSON::ParserError => err
-        raise Floe::InvalidWorkflowError, err.message
+        raise Floe::InvalidExecutionInput, "Invalid State Machine Execution Input: #{err}: was expecting (JSON String, Number, Array, Object or token 'null', 'true' or 'false')"
       end
 
       def execution

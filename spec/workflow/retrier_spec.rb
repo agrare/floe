@@ -1,6 +1,6 @@
 RSpec.describe Floe::Workflow::Retrier do
   let(:input) { {} }
-  let(:ctx) { Floe::Workflow::Context.new(:input => input) }
+  let(:ctx) { Floe::Workflow::Context.new(:input => input.to_json) }
   let(:resource) { "docker://hello-world:latest" }
   let(:workflow) do
     make_workflow(

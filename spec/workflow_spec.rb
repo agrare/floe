@@ -1,7 +1,7 @@
 RSpec.describe Floe::Workflow do
   let(:now)   { Time.now.utc }
   let(:input) { {"input" => "value"}.freeze }
-  let(:ctx)   { Floe::Workflow::Context.new(:input => input) }
+  let(:ctx)   { Floe::Workflow::Context.new(:input => input.to_json) }
 
   describe "#new" do
     it "sets initial state" do
@@ -57,7 +57,7 @@ RSpec.describe Floe::Workflow do
     it "raises an exception for invalid context" do
       payload = make_payload({"FirstState" => {"Type" => "Success"}})
 
-      expect { described_class.new(payload, "invalid context") }.to raise_error(Floe::InvalidWorkflowError, "unexpected token at 'invalid context'")
+      expect { described_class.new(payload, "invalid context") }.to raise_error(Floe::InvalidExecutionInput, "Invalid State Machine Execution Input: unexpected token at 'invalid context': was expecting (JSON String, Number, Array, Object or token 'null', 'true' or 'false')")
     end
 
     it "raises an exception for invalid resource scheme in a Task state" do
@@ -334,8 +334,8 @@ RSpec.describe Floe::Workflow do
 
   describe ".wait" do
     context "with two ready workflows" do
-      let(:workflow_1) { make_workflow(Floe::Workflow::Context.new(:input => input), {"FirstState" => {"Type" => "Succeed"}}) }
-      let(:workflow_2) { make_workflow(Floe::Workflow::Context.new(:input => input), {"FirstState" => {"Type" => "Succeed"}}) }
+      let(:workflow_1) { make_workflow(ctx, {"FirstState" => {"Type" => "Succeed"}}) }
+      let(:workflow_2) { make_workflow(ctx, {"FirstState" => {"Type" => "Succeed"}}) }
 
       it "returns both workflows as ready to step" do
         expect(described_class.wait([workflow_1, workflow_2], :timeout => 0)).to include(workflow_1, workflow_2)
@@ -343,8 +343,8 @@ RSpec.describe Floe::Workflow do
     end
 
     context "with one ready workflow and one that would block" do
-      let(:workflow_1) { make_workflow(Floe::Workflow::Context.new(:input => input), {"FirstState" => {"Type" => "Succeed"}}) }
-      let(:workflow_2) { make_workflow(Floe::Workflow::Context.new(:input => input), {"FirstState" => {"Type" => "Wait", "Seconds" => 10, "End" => true}}).start_workflow.tap(&:step_nonblock) }
+      let(:workflow_1) { make_workflow(ctx, {"FirstState" => {"Type" => "Succeed"}}) }
+      let(:workflow_2) { make_workflow(ctx, {"FirstState" => {"Type" => "Wait", "Seconds" => 10, "End" => true}}).start_workflow.tap(&:step_nonblock) }
 
       it "returns only the first workflow as ready to step" do
         expect(described_class.wait([workflow_1, workflow_2], :timeout => 0)).to eq([workflow_1])
@@ -352,7 +352,7 @@ RSpec.describe Floe::Workflow do
     end
 
     context "with a workflow that would block for 10 seconds" do
-      let(:workflow) { make_workflow(Floe::Workflow::Context.new(:input => input), {"FirstState" => {"Type" => "Wait", "Seconds" => 10, "End" => true}}).start_workflow.tap(&:step_nonblock) }
+      let(:workflow) { make_workflow(ctx, {"FirstState" => {"Type" => "Wait", "Seconds" => 10, "End" => true}}).start_workflow.tap(&:step_nonblock) }
 
       it "returns no ready workflows with :timeout => 0" do
         expect(described_class.wait(workflow, :timeout => 0)).to be_empty

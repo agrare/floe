@@ -108,7 +108,7 @@ module Floe
 
       @states         = payload["States"].to_a.map { |state_name, state| State.build!(self, state_name, state) }
       @states_by_name = @states.each_with_object({}) { |state, result| result[state.name] = state }
-    rescue Floe::InvalidWorkflowError
+    rescue Floe::Error
       raise
     rescue => err
       raise Floe::InvalidWorkflowError, err.message

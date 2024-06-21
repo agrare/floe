@@ -1,6 +1,6 @@
 RSpec.describe Floe::Workflow::States::Task do
   let(:input)    { {"foo" => {"bar" => "baz"}, "bar" => {"baz" => "foo"}} }
-  let(:ctx)      { Floe::Workflow::Context.new(:input => input) }
+  let(:ctx)      { Floe::Workflow::Context.new(:input => input.to_json) }
   let(:resource) { "docker://hello-world:latest" }
 
   describe "#run_async!" do
