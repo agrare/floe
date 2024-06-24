@@ -30,7 +30,7 @@ module Floe
       # Display status
       workflows.each do |workflow|
         puts "", "#{workflow.name}#{" (#{workflow.status})" unless workflow.context.success?}", "===" if workflows.size > 1
-        puts workflow.output.inspect
+        puts workflow.output
       end
 
       workflows.all? { |workflow| workflow.context.success? }

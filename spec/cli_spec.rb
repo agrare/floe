@@ -39,7 +39,7 @@ RSpec.describe Floe::CLI do
 
       lines = output.lines(:chomp => true)
       expect(lines.first).to include("checking 1 workflows...")
-      expect(lines.last).to eq('{"foo"=>1}')
+      expect(lines.last).to eq('{"foo":1}')
     end
 
     it "with a bare workflow and --input" do
@@ -48,7 +48,7 @@ RSpec.describe Floe::CLI do
 
       lines = output.lines(:chomp => true)
       expect(lines.first).to include("checking 1 workflows...")
-      expect(lines.last).to eq('{"foo"=>1}')
+      expect(lines.last).to eq('{"foo":1}')
     end
 
     it "with --workflow and no input" do
@@ -66,7 +66,7 @@ RSpec.describe Floe::CLI do
 
       lines = output.lines(:chomp => true)
       expect(lines.first).to include("checking 1 workflows...")
-      expect(lines.last).to eq('{"foo"=>1}')
+      expect(lines.last).to eq('{"foo":1}')
     end
 
     it "with a bare workflow and --workflow" do
@@ -94,11 +94,11 @@ RSpec.describe Floe::CLI do
       expect(lines.last(7).join("\n")).to eq(<<~OUTPUT.chomp)
         workflow
         ===
-        {"foo"=>1}
+        {"foo":1}
 
         workflow
         ===
-        {"foo"=>2}
+        {"foo":2}
       OUTPUT
     end
 
@@ -111,11 +111,11 @@ RSpec.describe Floe::CLI do
       expect(lines.last(7).join("\n")).to eq(<<~OUTPUT.chomp)
         workflow
         ===
-        {"foo"=>1}
+        {"foo":1}
 
         workflow
         ===
-        {"foo"=>1}
+        {"foo":1}
       OUTPUT
     end
 

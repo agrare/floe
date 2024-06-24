@@ -88,7 +88,7 @@ RSpec.describe Floe::Workflow do
       expect(ctx.ended?).to eq(true)
 
       # final results
-      expect(workflow.output).to eq(input)
+      expect(workflow.output).to eq(input.to_json)
       expect(workflow.status).to eq("success")
       expect(workflow.end?).to eq(true)
     end
@@ -113,7 +113,7 @@ RSpec.describe Floe::Workflow do
       expect(ctx.ended?).to eq(true)
 
       # final results
-      expect(workflow.output).to eq({"Cause" => "Bad Stuff", "Error" => "Issue"})
+      expect(workflow.output).to eq({"Error" => "Issue", "Cause" => "Bad Stuff"}.to_json)
       expect(workflow.status).to eq("failure")
       expect(workflow.end?).to eq(true)
     end
@@ -148,7 +148,7 @@ RSpec.describe Floe::Workflow do
       workflow.start_workflow
       workflow.step_nonblock
 
-      expect(workflow.output).to eq(input)
+      expect(workflow.output).to eq(input.to_json)
       expect(workflow.status).to eq("success")
       expect(workflow.end?).to eq(true)
       expect(ctx.output).to eq(input)
@@ -187,7 +187,7 @@ RSpec.describe Floe::Workflow do
         # step_nonblock should return 0 and mark the workflow as completed
         expect(workflow.step_nonblock).to eq(0)
 
-        expect(workflow.output).to eq(input)
+        expect(workflow.output).to eq(input.to_json)
         expect(workflow.status).to eq("success")
         expect(workflow.end?).to eq(true)
         expect(ctx.output).to eq(input)
@@ -243,7 +243,7 @@ RSpec.describe Floe::Workflow do
       expect(ctx.running?).to eq(false)
       expect(ctx.ended?).to eq(true)
 
-      expect(workflow.output).to eq(input)
+      expect(workflow.output).to eq(input.to_json)
     end
   end
 
