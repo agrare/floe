@@ -54,8 +54,6 @@ module Floe
 
           input = process_input(context)
 
-          context.state["Iteration"]            = 0
-          context.state["MaxIterations"]        = input.count
           context.state["ItemProcessorContext"] = input.map { |item| Context.new({"Execution" => {"Id" => context.execution["Id"]}}, :input => item.to_json).to_h }
         end
 
@@ -131,14 +129,11 @@ module Floe
         end
 
         def step_nonblock!(context)
-          item_processor_context = Context.new(context.state["ItemProcessorContext"][context.state["Iteration"]])
-          item_processor.run_nonblock(item_processor_context) if item_processor.step_nonblock_ready?(item_processor_context)
-          if item_processor_context.ended?
-            context.state["Iteration"] += 1
-            0
-          else
-            Errno::EAGAIN
+          each_item_processor(context).each do |ctx|
+            item_processor.run_nonblock(ctx) if item_processor.step_nonblock_ready?(ctx)
           end
+
+          ended?(context) ? 0 : Errno::EAGAIN
         end
 
         def parse_error(context)
