@@ -157,6 +157,7 @@ module Floe
 
         def validate_state!(workflow)
           validate_state_next!(workflow)
+          invalid_field_error!("MaxConcurrency", @max_concurrency, "must be greater than 0") if @max_concurrency && @max_concurrency <= 0
         end
       end
     end

@@ -26,7 +26,7 @@ RSpec.describe Floe::Workflow::States::Map do
         "Type"           => "Map",
         "InputPath"      => "$.detail",
         "ItemsPath"      => "$.shipped",
-        "MaxConcurrency" => 0,
+        "MaxConcurrency" => 1,
         "ItemProcessor"  => {
           "StartAt" => "Validate",
           "States"  => {
@@ -106,6 +106,23 @@ RSpec.describe Floe::Workflow::States::Map do
       expect { Floe::Workflow.new(payload, ctx) }
         .to raise_error(Floe::InvalidWorkflowError, "States.Validate field \"Next\" value \"PassState\" is not found in \"States\"")
     end
+
+    it "raises an InvalidWorkflowError if MaxConcurrency is 0" do
+      payload = {
+        "Validate-All" => {
+          "Type"           => "Map",
+          "MaxConcurrency" => 0,
+          "End"            => true,
+          "ItemProcessor"  => {
+            "StartAt" => "Validate",
+            "States"  => {"Validate" => {"Type" => "Succeed"}}
+          }
+        }
+      }
+
+      expect { make_workflow(ctx, payload) }
+        .to raise_error(Floe::InvalidWorkflowError, "States.Validate-All field \"MaxConcurrency\" value \"0\" must be greater than 0")
+    end
   end
 
   it "#end?" do
@@ -130,7 +147,7 @@ RSpec.describe Floe::Workflow::States::Map do
           "Validate-All" => {
             "Type"           => "Map",
             "ItemsPath"      => "$.colors",
-            "MaxConcurrency" => 0,
+            "MaxConcurrency" => 1,
             "ItemProcessor"  => {
               "StartAt" => "Validate",
               "States"  => {
