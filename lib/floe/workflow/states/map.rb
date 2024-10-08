@@ -129,8 +129,16 @@ module Floe
         end
 
         def step_nonblock!(context)
-          each_item_processor(context).each do |ctx|
-            item_processor.run_nonblock(ctx) if item_processor.step_nonblock_ready?(ctx)
+          child_contexts = each_item_processor(context)
+
+          child_contexts.each do |ctx|
+            num_running = child_contexts.count(&:running?)
+            # If this iteration isn't already running and we can't start any more
+            next if !ctx.running? && max_concurrency && num_running >= max_concurrency
+            # If the current iteration is running but not ready
+            next unless item_processor.step_nonblock_ready?(ctx)
+
+            item_processor.run_nonblock(ctx)
           end
 
           ended?(context) ? 0 : Errno::EAGAIN

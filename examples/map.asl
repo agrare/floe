@@ -19,6 +19,7 @@
     "Map demo": {
       "Type": "Map",
       "ItemsPath": "$.colors",
+      "MaxConcurrency": 2,
       "ItemProcessor": {
         "ProcessorConfig": {
           "Mode": "INLINE"
@@ -27,11 +28,15 @@
         "States": {
           "Generate UUID": {
             "Type": "Pass",
-            "End": true,
+            "Next": "Sleep",
             "Parameters": {
               "uuid.$": "States.UUID()"
-            },
-            "OutputPath": "$.uuid"
+            }
+          },
+          "Sleep": {
+            "Type": "Task",
+            "Resource": "docker://docker.io/agrare/sleep:latest",
+            "End": true
           }
         }
       },
