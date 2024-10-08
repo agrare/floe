@@ -72,7 +72,7 @@ module Floe
         def run_nonblock!(context)
           start(context) unless context.state_started?
 
-          loop while step_nonblock!(context) == 0 && running?(context)
+          step_nonblock!(context) while running?(context)
           return Errno::EAGAIN unless ready?(context)
 
           finish(context) if ended?(context)
@@ -129,19 +129,20 @@ module Floe
         end
 
         def step_nonblock!(context)
-          child_contexts = each_item_processor(context)
-
-          child_contexts.each do |ctx|
-            num_running = child_contexts.count(&:running?)
+          each_item_processor(context).each do |ctx|
             # If this iteration isn't already running and we can't start any more
-            next if !ctx.running? && max_concurrency && num_running >= max_concurrency
-            # If the current iteration is running but not ready
-            next unless item_processor.step_nonblock_ready?(ctx)
+            next if !ctx.started? && !ctx.running? && concurrency_exceeded?(context)
 
-            item_processor.run_nonblock(ctx)
+            item_processor.run_nonblock(ctx) if item_processor.step_nonblock_ready?(ctx)
           end
+        end
 
-          ended?(context) ? 0 : Errno::EAGAIN
+        def concurrency_exceeded?(context)
+          max_concurrency && num_running(context) >= max_concurrency
+        end
+
+        def num_running(context)
+          each_item_processor(context).count(&:running?)
         end
 
         def parse_error(context)
