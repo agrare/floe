@@ -12,6 +12,7 @@ require_relative "floe/workflow_base"
 require_relative "floe/workflow"
 # mixins used by workflow components
 require_relative "floe/workflow/error_matcher_mixin"
+require_relative "floe/workflow/branch"
 require_relative "floe/workflow/catcher"
 require_relative "floe/workflow/choice_rule"
 require_relative "floe/workflow/choice_rule/not"
