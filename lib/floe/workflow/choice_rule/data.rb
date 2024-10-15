@@ -11,7 +11,7 @@ module Floe
         # e.g.: (String)(LessThan)(Path), (Numeric)(GreaterThanEquals)()
         OPERATION  = /^(#{(TYPES - %w[Null Present]).join("|")})(#{COMPARES.join("|")})(Path)?$/.freeze
 
-        attr_reader :variable, :compare_key, :type, :compare_predicate, :path
+        attr_reader :variable, :compare_key, :operation, :type, :compare_predicate, :path
 
         def initialize(_workflow, _name, payload)
           super
@@ -25,39 +25,7 @@ module Floe
 
           lhs = variable_value(context, input)
           rhs = compare_value(context, input)
-
-          case compare_key
-          when "IsNull" then is_null?(lhs, rhs)
-          when "IsNumeric" then is_numeric?(lhs, rhs)
-          when "IsString" then is_string?(lhs, rhs)
-          when "IsBoolean" then is_boolean?(lhs, rhs)
-          when "IsTimestamp" then is_timestamp?(lhs, rhs)
-          when "StringEquals", "StringEqualsPath",
-               "NumericEquals", "NumericEqualsPath",
-               "BooleanEquals", "BooleanEqualsPath",
-               "TimestampEquals", "TimestampEqualsPath"
-            lhs == rhs
-          when "StringLessThan", "StringLessThanPath",
-               "NumericLessThan", "NumericLessThanPath",
-               "TimestampLessThan", "TimestampLessThanPath"
-            lhs < rhs
-          when "StringGreaterThan", "StringGreaterThanPath",
-               "NumericGreaterThan", "NumericGreaterThanPath",
-               "TimestampGreaterThan", "TimestampGreaterThanPath"
-            lhs > rhs
-          when "StringLessThanEquals", "StringLessThanEqualsPath",
-               "NumericLessThanEquals", "NumericLessThanEqualsPath",
-               "TimestampLessThanEquals", "TimestampLessThanEqualsPath"
-            lhs <= rhs
-          when "StringGreaterThanEquals", "StringGreaterThanEqualsPath",
-               "NumericGreaterThanEquals", "NumericGreaterThanEqualsPath",
-               "TimestampGreaterThanEquals", "TimestampGreaterThanEqualsPath"
-            lhs >= rhs
-          when "StringMatches"
-            lhs.match?(Regexp.escape(rhs).gsub('\*', '.*?'))
-          else
-            raise Floe::InvalidWorkflowError, "Invalid choice [#{compare_key}]"
-          end
+          send(operation, lhs, rhs)
         end
 
         private
@@ -112,26 +80,53 @@ module Floe
         # rubocop:enable Naming/PredicateName
         # rubocop:enable Style/OptionalBooleanParameter
 
+        def equals?(lhs, rhs)
+          lhs == rhs
+        end
+
+        def lessthan?(lhs, rhs)
+          lhs < rhs
+        end
+
+        def greaterthan?(lhs, rhs)
+          lhs > rhs
+        end
+
+        def lessthanequals?(lhs, rhs)
+          lhs <= rhs
+        end
+
+        def greaterthanequals?(lhs, rhs)
+          lhs >= rhs
+        end
+
+        def matches?(lhs, rhs)
+          lhs.match?(Regexp.escape(rhs).gsub('\*', '.*?'))
+        end
+
         # parse the compare key at initialization time
         def parse_compare_key
           payload.each_key do |key|
             # e.g. (String)(GreaterThan)(Path)
             if (match_values = OPERATION.match(key))
               @compare_key = key
-              @type, _operator, @path = match_values.captures
+              @type, operator, @path = match_values.captures
+              @operation = "#{operator.downcase}?".to_sym
               @compare_predicate = parse_predicate(type)
               break
             end
             # e.g. (Is)(String)
-            if TYPE_CHECK.match?(key)
+            if (match_value = TYPE_CHECK.match(key))
               @compare_key = key
+              _operator, type = match_value.captures
               # type: nil means no runtime type checking.
               @type = @path = nil
+              @operation = "is_#{type.downcase}?".to_sym
               @compare_predicate = parse_predicate("Boolean")
               break
             end
           end
-          parser_error!("requires a compare key") unless compare_key
+          parser_error!("requires a compare key") if compare_key.nil? || operation.nil?
         end
 
         # parse predicate at initilization time
