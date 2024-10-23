@@ -19,6 +19,7 @@ if ENV['CI']
 end
 
 Dir['./spec/support/**/*.rb'].sort.each { |f| require f }
+Dir['./spec/shared/**/*.rb'].sort.each { |f| require f }
 
 # See https://rubydoc.info/gems/rspec-core/RSpec/Core/Configuration
 RSpec.configure do |config|
