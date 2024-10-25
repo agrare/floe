@@ -4,6 +4,7 @@ module Floe
   class Workflow
     module States
       class Parallel < Floe::Workflow::State
+        include ChildWorkflowMixin
         include InputOutputMixin
         include NonTerminalMixin
         include RetryCatchMixin
@@ -38,64 +39,19 @@ module Floe
           context.state["BranchContext"] = branches.map { |_branch| Context.new({"Execution" => {"Id" => context.execution["Id"]}}, :input => input.to_json).to_h }
         end
 
-        def finish(context)
-          if success?(context)
-            result = each_branch_context(context).map(&:output)
-            context.output = process_output(context, result)
-          else
-            error = parse_error(context)
-            retry_state!(context, error) || catch_error!(context, error) || fail_workflow!(context, error)
-          end
-
-          super
-        end
-
-        def run_nonblock!(context)
-          start(context) unless context.state_started?
-
-          step_nonblock!(context) while running?(context)
-          return Errno::EAGAIN unless ready?(context)
-
-          finish(context) if ended?(context)
-        end
-
         def end?
           @end
-        end
-
-        def ready?(context)
-          !context.state_started? || each_branch(context).any? { |branch, ctx| branch.step_nonblock_ready?(ctx) }
-        end
-
-        def wait_until(context)
-          each_branch(context).filter_map { |branch, ctx| branch.wait_until(ctx) }.min
-        end
-
-        def waiting?(context)
-          each_branch(context).any? { |branch, ctx| branch.waiting?(ctx) }
-        end
-
-        def running?(context)
-          !ended?(context)
-        end
-
-        def ended?(context)
-          each_branch_context(context).all?(&:ended?)
-        end
-
-        def success?(context)
-          each_branch_context(context).none?(&:failed?)
         end
 
         private
 
         def step_nonblock!(context)
-          each_branch(context).each do |branch, ctx|
-            branch.run_nonblock(ctx) if branch.step_nonblock_ready?(ctx)
+          each_child_workflow(context).each do |wf, ctx|
+            wf.run_nonblock(ctx) if wf.step_nonblock_ready?(ctx)
           end
         end
 
-        def each_branch(context)
+        def each_child_workflow(context)
           branches.filter_map.with_index do |branch, i|
             ctx = context.state.dig("BranchContext", i)
             next if ctx.nil?
@@ -104,12 +60,12 @@ module Floe
           end
         end
 
-        def each_branch_context(context)
-          context.state["BranchContext"].map { |ctx| Context.new(ctx) }
+        def parse_error(context)
+          each_child_context(context).detect(&:failed?)&.output || {"Error" => "States.Error"}
         end
 
-        def parse_error(context)
-          each_branch_context(context).detect(&:failed?)&.output || {"Error" => "States.Error"}
+        def child_context_key
+          "BranchContext"
         end
 
         def validate_state!(workflow)

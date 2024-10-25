@@ -30,6 +30,7 @@ require_relative "floe/workflow/reference_path"
 require_relative "floe/workflow/retrier"
 require_relative "floe/workflow/state"
 # mixins used by states
+require_relative "floe/workflow/states/child_workflow_mixin"
 require_relative "floe/workflow/states/input_output_mixin"
 require_relative "floe/workflow/states/non_terminal_mixin"
 require_relative "floe/workflow/states/retry_catch_mixin"
