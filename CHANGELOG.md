@@ -4,6 +4,24 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 
+## [0.15.0] - 2024-10-28
+### Added
+- Add WorkflowBase base class for Workflow ([#279](https://github.com/ManageIQ/floe/pull/279))
+- Add tool for using the aws stepfunctions simulator ([#244](https://github.com/ManageIQ/floe/pull/244))
+- Implement Map state ([#184](https://github.com/ManageIQ/floe/pull/184))
+- Add Map State Tolerated Failure ([#282](https://github.com/ManageIQ/floe/pull/282))
+- Run Map iterations in parallel up to MaxConcurrency ([#283](https://github.com/ManageIQ/floe/pull/283))
+- Implement Parallel State ([#291](https://github.com/ManageIQ/floe/pull/291))
+
+### Changed
+- More granular compare_key and determine path at initialization time ([#274](https://github.com/ManageIQ/floe/pull/274))
+- For Choice validation, use instance variables and not payload ([#277](https://github.com/ManageIQ/floe/pull/277))
+- Return ExceedToleratedFailureThreshold if ToleratedFailureCount/Percentage is present ([#285](https://github.com/ManageIQ/floe/pull/285))
+
+### Fixed
+- Fix case on log messages ([#280](https://github.com/ManageIQ/floe/pull/280))
+- Handle either ToleratedFailureCount or ToleratedFailurePercentage ([#284](https://github.com/ManageIQ/floe/pull/284))
+
 ## [0.14.0] - 2024-08-20
 ### Added
 - Implement "IsNumeric": false ([#266](https://github.com/ManageIQ/floe/pull/266))
