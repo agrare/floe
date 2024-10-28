@@ -4,6 +4,7 @@ module Floe
   class Workflow
     module States
       class Map < Floe::Workflow::State
+        include ChildWorkflowMixin
         include InputOutputMixin
         include NonTerminalMixin
         include RetryCatchMixin
@@ -53,53 +54,12 @@ module Floe
           context.state["ItemProcessorContext"] = input.map { |item| Context.new({"Execution" => {"Id" => context.execution["Id"]}}, :input => item.to_json).to_h }
         end
 
-        def finish(context)
-          if success?(context)
-            result = each_item_processor(context).map(&:output)
-            context.output = process_output(context, result)
-          else
-            error = parse_error(context)
-            retry_state!(context, error) || catch_error!(context, error) || fail_workflow!(context, error)
-          end
-
-          super
-        end
-
-        def run_nonblock!(context)
-          start(context) unless context.state_started?
-
-          step_nonblock!(context) while running?(context)
-          return Errno::EAGAIN unless ready?(context)
-
-          finish(context) if ended?(context)
-        end
-
         def end?
           @end
         end
 
-        def ready?(context)
-          !context.state_started? || each_item_processor(context).any? { |ctx| item_processor.step_nonblock_ready?(ctx) }
-        end
-
-        def wait_until(context)
-          each_item_processor(context).filter_map { |ctx| item_processor.wait_until(ctx) }.min
-        end
-
-        def waiting?(context)
-          each_item_processor(context).any? { |ctx| item_processor.waiting?(ctx) }
-        end
-
-        def running?(context)
-          !ended?(context)
-        end
-
-        def ended?(context)
-          each_item_processor(context).all?(&:ended?)
-        end
-
         def success?(context)
-          contexts   = each_item_processor(context)
+          contexts   = each_child_context(context)
           num_failed = contexts.count(&:failed?)
           total      = contexts.count
 
@@ -120,16 +80,18 @@ module Floe
 
         private
 
-        def each_item_processor(context)
-          context.state["ItemProcessorContext"].map { |ctx| Context.new(ctx) }
-        end
-
         def step_nonblock!(context)
-          each_item_processor(context).each do |ctx|
+          each_child_context(context).each do |ctx|
             # If this iteration isn't already running and we can't start any more
             next if !ctx.started? && concurrency_exceeded?(context)
 
             item_processor.run_nonblock(ctx) if item_processor.step_nonblock_ready?(ctx)
+          end
+        end
+
+        def each_child_workflow(context)
+          each_child_context(context).map do |ctx|
+            [item_processor, Context.new(ctx)]
           end
         end
 
@@ -138,7 +100,7 @@ module Floe
         end
 
         def num_running(context)
-          each_item_processor(context).count(&:running?)
+          each_child_context(context).count(&:running?)
         end
 
         def parse_error(context)
@@ -148,8 +110,12 @@ module Floe
           if tolerated_failure_count || tolerated_failure_percentage
             {"Error" => "States.ExceedToleratedFailureThreshold"}
           else
-            each_item_processor(context).detect(&:failed?)&.output || {"Error" => "States.Error"}
+            each_child_context(context).detect(&:failed?)&.output || {"Error" => "States.Error"}
           end
+        end
+
+        def child_context_key
+          "ItemProcessorContext"
         end
 
         def validate_state!(workflow)
