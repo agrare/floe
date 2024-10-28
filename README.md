@@ -197,6 +197,14 @@ Options supported by the kubernetes docker runner are:
 * `ca_file` - Path to a certificate-authority file for the kubernetes API, only valid if server and token are passed.  If present `/run/secrets/kubernetes.io/serviceaccount/ca.crt` will be used
 * `verify_ssl` - Controls if the kubernetes API certificate-authority should be verified, defaults to "true", only vaild if server and token are passed
 
+## Features Not Yet Supported
+
+The following are not yet supported:
+- Map State Fields:
+  - ItemReader
+  - ItemSelector/ItemBatcher
+  - ResultWriter
+
 ## Development
 
 After checking out the repo, run `bin/setup` to install dependencies. You can also run `bin/console` for an interactive prompt that will allow you to experiment.
