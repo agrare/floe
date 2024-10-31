@@ -30,7 +30,7 @@ module Floe
         end
 
         begin
-          runner_context["container_ref"] = run_container(image, env, execution_id, runner_context["secrets_ref"])
+          runner_context["container_ref"] = run_container(image, env, execution_id, runner_context["secrets_ref"], context.logger)
           runner_context
         rescue AwesomeSpawn::CommandResultError => err
           cleanup(runner_context)
@@ -123,7 +123,7 @@ module Floe
 
       attr_reader :network
 
-      def run_container(image, env, execution_id, secrets_file)
+      def run_container(image, env, execution_id, secrets_file, logger)
         params = run_container_params(image, env, execution_id, secrets_file)
 
         logger.debug("Running #{AwesomeSpawn.build_command_line(self.class::DOCKER_COMMAND, params)}")

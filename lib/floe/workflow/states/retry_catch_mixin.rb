@@ -29,7 +29,7 @@ module Floe
           wait_until!(context, :seconds => retrier.sleep_duration(context["State"]["RetryCount"]))
           context.next_state = context.state_name
           context.output     = error
-          logger.info("Running state: [#{long_name}] with input [#{context.json_input}] got error[#{context.json_output}]...Retry - delay: #{wait_until(context)}")
+          context.logger.info("Running state: [#{long_name}] with input [#{context.json_input}] got error[#{context.json_output}]...Retry - delay: #{wait_until(context)}")
           true
         end
 
@@ -39,7 +39,7 @@ module Floe
 
           context.next_state = catcher.next
           context.output     = catcher.result_path.set(context.input, error)
-          logger.info("Running state: [#{long_name}] with input [#{context.json_input}]...CatchError - next state: [#{context.next_state}] output: [#{context.json_output}]")
+          context.logger.info("Running state: [#{long_name}] with input [#{context.json_input}]...CatchError - next state: [#{context.next_state}] output: [#{context.json_output}]")
 
           true
         end
@@ -49,7 +49,7 @@ module Floe
           # keeping in here for completeness
           context.next_state = nil
           context.output = error
-          logger.error("Running state: [#{long_name}] with input [#{context.json_input}]...Complete workflow - output: [#{context.json_output}]")
+          context.logger.error("Running state: [#{long_name}] with input [#{context.json_input}]...Complete workflow - output: [#{context.json_output}]")
         end
       end
     end

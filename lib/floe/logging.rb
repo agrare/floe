@@ -7,7 +7,11 @@ module Floe
     end
 
     def logger
-      Floe.logger
+      @logger || Floe.logger
+    end
+
+    def logger=(logger)
+      @logger = logger
     end
   end
 end

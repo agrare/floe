@@ -1,9 +1,12 @@
+require "floe"
+require "floe/container_runner"
+
 module Floe
   class CLI
+    include Logging
+
     def initialize
       require "optimist"
-      require "floe"
-      require "floe/container_runner"
       require "logger"
 
       Floe.logger = Logger.new($stdout)
@@ -20,12 +23,22 @@ module Floe
           create_workflow(workflow, opts[:context], input, credentials)
         end
 
-      Floe::Workflow.wait(workflows, &:run_nonblock)
+      output_streams = create_loggers(workflows, opts[:segment_output])
+
+      logger.info("Checking #{workflows.count} workflows...")
+      ready = Floe::Workflow.wait(workflows, &:run_nonblock)
+      logger.info("Checking #{workflows.count} workflows...Complete - #{ready.count} ready")
 
       # Display status
       workflows.each do |workflow|
-        puts "", "#{workflow.name}#{" (#{workflow.status})" unless workflow.context.success?}", "===" if workflows.size > 1
-        puts workflow.output
+        if workflows.size > 1
+          logger.info("")
+          logger.info("#{workflow.name}#{" (#{workflow.status})" unless workflow.context.success?}")
+          logger.info("===")
+        end
+
+        logger.info(output_streams[workflow].string) if output_streams[workflow]
+        logger.info(workflow.output)
       end
 
       workflows.all? { |workflow| workflow.context.success? }
@@ -49,6 +62,7 @@ module Floe
         opt :context, "JSON payload of the Context",              :type => :string
         opt :credentials, "JSON payload with Credentials",        :type => :string
         opt :credentials_file, "Path to a file with Credentials", :type => :string
+        opt :segment_output, "Segment output by each worker",     :default => false
 
         Floe::ContainerRunner.cli_options(self)
 
@@ -88,6 +102,18 @@ module Floe
     def create_workflow(workflow, context_payload, input, credentials)
       context = Floe::Workflow::Context.new(context_payload, :input => input, :credentials => credentials)
       Floe::Workflow.load(workflow, context)
+    end
+
+    def create_loggers(workflows, segment_output)
+      if workflows.size == 1 || !segment_output
+        # no extra work necessary
+        {}
+      else
+        workflows.each_with_object({}) do |workflow, h|
+          workflow.context.logger = Logger.new(output = StringIO.new)
+          h[workflow] = output
+        end
+      end
     end
   end
 end

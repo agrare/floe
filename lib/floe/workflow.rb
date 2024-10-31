@@ -18,7 +18,6 @@ module Floe
 
       def wait(workflows, timeout: nil, &block)
         workflows = [workflows] if workflows.kind_of?(self)
-        logger.info("Checking #{workflows.count} workflows...")
 
         run_until   = Time.now.utc + timeout if timeout.to_i > 0
         ready       = []
@@ -72,7 +71,6 @@ module Floe
           sleep_thread&.kill
         end
 
-        logger.info("Checking #{workflows.count} workflows...Complete - #{ready.count} ready")
         ready
       ensure
         wait_thread&.kill

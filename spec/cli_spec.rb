@@ -30,7 +30,7 @@ RSpec.describe Floe::CLI do
 
       lines = output.lines(:chomp => true)
       expect(lines.first).to include("Checking 1 workflows...")
-      expect(lines.last).to eq("{}")
+      expect(lines.last).to include("{}")
     end
 
     it "with a bare workflow and input" do
@@ -39,7 +39,7 @@ RSpec.describe Floe::CLI do
 
       lines = output.lines(:chomp => true)
       expect(lines.first).to include("Checking 1 workflows...")
-      expect(lines.last).to eq('{"foo":1}')
+      expect(lines.last).to include('{"foo":1}')
     end
 
     it "with a bare workflow and --input" do
@@ -48,7 +48,7 @@ RSpec.describe Floe::CLI do
 
       lines = output.lines(:chomp => true)
       expect(lines.first).to include("Checking 1 workflows...")
-      expect(lines.last).to eq('{"foo":1}')
+      expect(lines.last).to include('{"foo":1}')
     end
 
     it "with --workflow and no input" do
@@ -57,7 +57,7 @@ RSpec.describe Floe::CLI do
 
       lines = output.lines(:chomp => true)
       expect(lines.first).to include("Checking 1 workflows...")
-      expect(lines.last).to eq("{}")
+      expect(lines.last).to include("{}")
     end
 
     it "with --workflow and --input" do
@@ -66,7 +66,7 @@ RSpec.describe Floe::CLI do
 
       lines = output.lines(:chomp => true)
       expect(lines.first).to include("Checking 1 workflows...")
-      expect(lines.last).to eq('{"foo":1}')
+      expect(lines.last).to include('{"foo":1}')
     end
 
     it "with a bare workflow and --workflow" do
@@ -74,7 +74,7 @@ RSpec.describe Floe::CLI do
       expect(result).to be false
 
       lines = error.lines(:chomp => true)
-      expect(lines.first).to eq("Error: cannot specify both --workflow and bare workflows.")
+      expect(lines.first).to include("Error: cannot specify both --workflow and bare workflows.")
     end
 
     it "with --input but no workflows" do
@@ -82,7 +82,7 @@ RSpec.describe Floe::CLI do
       expect(result).to be false
 
       lines = error.lines(:chomp => true)
-      expect(lines.first).to eq("Error: workflow(s) must be specified.")
+      expect(lines.first).to include("Error: workflow(s) must be specified.")
     end
 
     it "with multiple bare workflow/input pairs" do
@@ -91,7 +91,7 @@ RSpec.describe Floe::CLI do
 
       lines = output.lines(:chomp => true)
       expect(lines.first).to include("Checking 2 workflows...")
-      expect(lines.last(7).join("\n")).to eq(<<~OUTPUT.chomp)
+      expect(lines.last(7).map { |line| line.gsub(/^.* INFO -- : /, "") }.join("\n")).to eq(<<~OUTPUT.chomp)
         workflow
         ===
         {"foo":1}
@@ -108,7 +108,7 @@ RSpec.describe Floe::CLI do
 
       lines = output.lines(:chomp => true)
       expect(lines.first).to include("Checking 2 workflows...")
-      expect(lines.last(7).join("\n")).to eq(<<~OUTPUT.chomp)
+      expect(lines.last(7).map { |line| line.gsub(/^.* INFO -- : /, "") }.join("\n")).to eq(<<~OUTPUT.chomp)
         workflow
         ===
         {"foo":1}
@@ -124,7 +124,7 @@ RSpec.describe Floe::CLI do
       expect(result).to be false
 
       lines = error.lines(:chomp => true)
-      expect(lines.first).to eq("Error: workflow/input pairs must be specified.")
+      expect(lines.first).to include("Error: workflow/input pairs must be specified.")
     end
 
     def run_cli(*args)
