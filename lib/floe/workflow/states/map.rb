@@ -30,7 +30,7 @@ module Floe
           @catch           = payload["Catch"].to_a.map { |catcher| Catcher.new(catcher) }
           @item_processor  = ItemProcessor.new(payload["ItemProcessor"], name)
           @items_path      = ReferencePath.new(payload.fetch("ItemsPath", "$"))
-          @item_reader     = payload["ItemReader"]
+          @item_reader     = ItemReader.new(payload["ItemReader"], name + ["ItemReader"]) if payload["ItemReader"]
           @item_selector   = payload["ItemSelector"]
           @item_batcher    = payload["ItemBatcher"]
           @result_writer   = payload["ResultWriter"]
