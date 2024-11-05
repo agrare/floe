@@ -32,7 +32,7 @@ module Floe
           @items_path      = ReferencePath.new(payload.fetch("ItemsPath", "$"))
           @item_reader     = payload["ItemReader"]
           @item_selector   = payload["ItemSelector"]
-          @item_batcher    = payload["ItemBatcher"]
+          @item_batcher    = ItemBatcher.new(payload["ItemBatcher"], name + ["ItemBatcher"]) if payload["ItemBatcher"]
           @result_writer   = payload["ResultWriter"]
           @max_concurrency = payload["MaxConcurrency"]&.to_i
           @tolerated_failure_percentage = payload["ToleratedFailurePercentage"]&.to_i
