@@ -128,6 +128,15 @@ RSpec.describe Floe::Workflow::ItemBatcher do
       it "returns in batches of 2" do
         expect(subject.value(context, input, state_input)).to eq([{"Items" => %w[a b]}, {"Items" => %w[c d]}, {"Items" => %w[e]}])
       end
+
+      context "with an invalid value in input" do
+        let(:state_input) { {"batchSize" => 0, "items" => input} }
+
+        it "raises an exception" do
+          expect { subject.value(context, input, state_input) }
+            .to raise_error(Floe::ExecutionError, "Map.ItemBatcher field \"MaxItemsPerBatchPath\" value \"0\" must be a positive integer")
+        end
+      end
     end
 
     context "with BatchInput" do

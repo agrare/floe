@@ -33,6 +33,9 @@ module Floe
         max_items       = max_items_per_batch       || max_items_per_batch_path&.value(context, state_input)
         max_input_bytes = max_input_bytes_per_batch || max_input_bytes_per_batch_path&.value(context, state_input)
 
+        raise runtime_field_error!("MaxItemsPerBatchPath", max_items, "must be a positive integer")            if max_items && max_items <= 0
+        raise runtime_field_error!("MaxInputBytesPerBatchPath", max_input_bytes, "must be a positive integer") if max_input_bytes && max_input_bytes <= 0
+
         output = batch_input ? batch_input.value(context, state_input) : {}
 
         input.each_slice(max_items).map do |batch|
