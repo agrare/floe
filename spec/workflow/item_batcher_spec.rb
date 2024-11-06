@@ -113,5 +113,14 @@ RSpec.describe Floe::Workflow::ItemBatcher do
         expect(subject.value(context, input, state_input)).to eq([{"Items" => %w[a b]}, {"Items" => %w[c d]}, {"Items" => %w[e]}])
       end
     end
+
+    context "with BatchInput" do
+      let(:payload)     { {"BatchInput" => {"foo.$" => "$.bar"}, "MaxItemsPerBatch" => 2} }
+      let(:state_input) { {"bar" => "bar", "items" => input} }
+
+      it "merges BatchInput with payloads" do
+        expect(subject.value(context, input, state_input)).to eq([{"foo" => "bar", "Items" => %w[a b]}, {"foo" => "bar", "Items" => %w[c d]}, {"foo" => "bar", "Items" => %w[e]}])
+      end
+    end
   end
 end
