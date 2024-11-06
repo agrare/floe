@@ -9,7 +9,7 @@ RSpec.describe Floe::Workflow::ItemBatcher do
         expect { subject }
           .to raise_error(
             Floe::InvalidWorkflowError,
-            "Map.ItemBatcher must have one of \"MaxItemsPerBatch\", \"MaxItemsPerBatchPath\", \"MaxInputBytesPerBatch\", \"MaxInputBytesPerBatchPath\""
+            "Map.ItemBatcher must have one of \"MaxItemsPerBatch\", \"MaxItemsPerBatchPath\""
           )
       end
     end
@@ -50,10 +50,13 @@ RSpec.describe Floe::Workflow::ItemBatcher do
       let(:payload) { {"MaxInputBytesPerBatch" => 1_024} }
 
       it "returns an ItemBatcher" do
+        pending "implement MaxInputBytesPerBatch"
         expect(subject).to be_kind_of(described_class)
       end
 
       it "sets max_input_bytes_per_batch" do
+        pending "implement MaxInputBytesPerBatch"
+
         expect(subject.max_input_bytes_per_batch).to eq(payload["MaxInputBytesPerBatch"])
       end
 
@@ -61,6 +64,8 @@ RSpec.describe Floe::Workflow::ItemBatcher do
         let(:payload) { {"MaxInputBytesPerBatch" => 0} }
 
         it "raises an exception" do
+          pending "implement MaxInputBytesPerBatch"
+
           expect { subject }.to raise_error(Floe::InvalidWorkflowError, "Map.ItemBatcher field \"MaxInputBytesPerBatch\" value \"0\" must be a positive integer")
         end
       end
@@ -83,10 +88,14 @@ RSpec.describe Floe::Workflow::ItemBatcher do
       let(:payload) { {"MaxInputBytesPerBatchPath" => "$.batchSize"} }
 
       it "returns an ItemBatcher" do
+        pending "implement MaxInputBytesPerBatchPath"
+
         expect(subject).to be_kind_of(described_class)
       end
 
       it "sets max_input_bytes_per_batch_path" do
+        pending "implement MaxInputBytesPerBatchPath"
+
         expect(subject.max_input_bytes_per_batch_path).to be_kind_of(Floe::Workflow::ReferencePath)
         expect(subject.max_input_bytes_per_batch_path).to have_attributes(:path => ["batchSize"])
       end
@@ -104,6 +113,8 @@ RSpec.describe Floe::Workflow::ItemBatcher do
       let(:payload) { {"MaxInputBytesPerBatch" => 1_024, "MaxInputBytesPerBatchPath" => "$.batchSize"} }
 
       it "raises an exception" do
+        pending "implement MaxInputBytesPerBatchPath"
+
         expect { subject }.to raise_error(Floe::InvalidWorkflowError, "Map.ItemBatcher must not specify both \"MaxInputBytesPerBatch\" and \"MaxInputBytesPerBatchPath\"")
       end
     end
@@ -135,6 +146,38 @@ RSpec.describe Floe::Workflow::ItemBatcher do
         it "raises an exception" do
           expect { subject.value(context, input, state_input) }
             .to raise_error(Floe::ExecutionError, "Map.ItemBatcher field \"MaxItemsPerBatchPath\" value \"0\" must be a positive integer")
+        end
+      end
+    end
+
+    context "with MaxInputBytesPerBatch" do
+      let(:payload) { {"MaxInputBytesPerBatch" => 1_024} }
+
+      it "returns in batches of 2" do
+        pending "support max bytes per batch"
+
+        expect(subject.value(context, input)).to eq([{"Items" => %w[a b]}, {"Items" => %w[c d]}, {"Items" => %w[e]}])
+      end
+    end
+
+    context "with MaxInputBytesPerBatchPath" do
+      let(:payload)     { {"MaxInputBytesPerBatchPath" => "$.bytesPerBatch"} }
+      let(:state_input) { {"bytesPerBatch" => 1_024, "items" => input} }
+
+      it "returns in batches of 2" do
+        pending "support max bytes per batch"
+
+        expect(subject.value(context, input, state_input)).to eq([{"Items" => %w[a b]}, {"Items" => %w[c d]}, {"Items" => %w[e]}])
+      end
+
+      context "with an invalid value in input" do
+        let(:state_input) { {"bytesPerBatch" => 0, "items" => input} }
+
+        it "raises an exception" do
+          pending "support max bytes per batch"
+
+          expect { subject.value(context, input, state_input) }
+            .to raise_error(Floe::ExecutionError, "Map.ItemBatcher field \"MaxInputBytesPerBatchPath\" value \"0\" must be a positive integer")
         end
       end
     end
