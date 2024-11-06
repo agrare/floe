@@ -34,8 +34,13 @@ RSpec.describe Floe::Workflow::ChoiceRule do
     end
 
     context "with non-path Compare Key" do
-      let(:choices) { [{"Variable" => "$foo", "StringEqualsPath" => "wrong", "Next" => "FirstMatchState"}] }
+      let(:choices) { [{"Variable" => "$.foo", "StringEqualsPath" => "wrong", "Next" => "FirstMatchState"}] }
       it { expect { workflow }.to raise_exception(Floe::InvalidWorkflowError, "States.Choice1.Choices.0.Data field \"StringEqualsPath\" value \"wrong\" Path [wrong] must start with \"$\"") }
+    end
+
+    context "with invalid Compare Key" do
+      let(:choices) { [{"Variable" => "$.foo", "IntegerMatchPath" => "$.foo", "Next" => "FirstMatchState"}] }
+      it { expect { workflow }.to raise_exception(Floe::InvalidWorkflowError, "States.Choice1.Choices.0.Data requires a compare key") }
     end
 
     context "with second level Next (Not)" do
