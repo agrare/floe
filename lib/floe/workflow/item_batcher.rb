@@ -25,9 +25,11 @@ module Floe
         parser_error!("must not specify both \"MaxInputBytesPerBatch\" and \"MaxInputBytesPerBatchPath\"") if max_input_bytes_per_batch && max_input_bytes_per_batch_path
       end
 
-      def value(context, input)
-        max_items       = max_items_per_batch       || max_items_per_batch_path&.value(context, input)
-        max_input_bytes = max_input_bytes_per_batch || max_input_bytes_per_batch_path&.value(context, input)
+      def value(context, input, state_input = nil)
+        state_input ||= input
+
+        max_items       = max_items_per_batch       || max_items_per_batch_path&.value(context, state_input)
+        max_input_bytes = max_input_bytes_per_batch || max_input_bytes_per_batch_path&.value(context, state_input)
 
         input.each_slice(max_items).map do |batch|
           {"Items" => batch}

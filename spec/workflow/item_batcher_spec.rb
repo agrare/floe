@@ -104,5 +104,14 @@ RSpec.describe Floe::Workflow::ItemBatcher do
         expect(subject.value(context, input)).to eq([{"Items" => %w[a b]}, {"Items" => %w[c d]}, {"Items" => %w[e]}])
       end
     end
+
+    context "with MaxItemsPerBatchPath" do
+      let(:payload)     { {"MaxItemsPerBatchPath" => "$.batchSize"} }
+      let(:state_input) { {"batchSize" => 2, "items" => input} }
+
+      it "returns in batches of 2" do
+        expect(subject.value(context, input, state_input)).to eq([{"Items" => %w[a b]}, {"Items" => %w[c d]}, {"Items" => %w[e]}])
+      end
+    end
   end
 end

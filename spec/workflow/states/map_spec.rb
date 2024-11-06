@@ -198,6 +198,37 @@ RSpec.describe Floe::Workflow::States::Map do
         loop while state.run_nonblock!(ctx) != 0
         expect(ctx.output).to eq([["red", "green"], ["blue"]])
       end
+
+      context "with MaxItemsPerBatchPath" do
+        let(:input) { {"maxItems" => 2, "colors" => ["red", "green", "blue"]} }
+        let(:workflow) do
+          payload = {
+            "Validate-All" => {
+              "Type"           => "Map",
+              "ItemsPath"      => "$.colors",
+              "ItemBatcher"    => {"MaxItemsPerBatchPath" => "$.maxItems"},
+              "MaxConcurrency" => 1,
+              "ItemProcessor"  => {
+                "StartAt" => "Validate",
+                "States"  => {
+                  "Validate" => {
+                    "Type"      => "Pass",
+                    "InputPath" => "$.Items",
+                    "End"       => true
+                  }
+                }
+              },
+              "End"            => true,
+            }
+          }
+          make_workflow(ctx, payload)
+        end
+
+        it "sets the context output" do
+          loop while state.run_nonblock!(ctx) != 0
+          expect(ctx.output).to eq([["red", "green"], ["blue"]])
+        end
+      end
     end
   end
 
