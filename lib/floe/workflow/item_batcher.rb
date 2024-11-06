@@ -21,8 +21,10 @@ module Floe
           parser_error!("must have one of \"MaxItemsPerBatch\", \"MaxItemsPerBatchPath\", \"MaxInputBytesPerBatch\", \"MaxInputBytesPerBatchPath\"")
         end
 
-        parser_error!("must not specify both \"MaxItemsPerBatch\" and \"MaxItemsPerBatchPath\"")           if max_items_per_batch && max_items_per_batch_path
-        parser_error!("must not specify both \"MaxInputBytesPerBatch\" and \"MaxInputBytesPerBatchPath\"") if max_input_bytes_per_batch && max_input_bytes_per_batch_path
+        parser_error!("must not specify both \"MaxItemsPerBatch\" and \"MaxItemsPerBatchPath\"")               if max_items_per_batch && max_items_per_batch_path
+        parser_error!("must not specify both \"MaxInputBytesPerBatch\" and \"MaxInputBytesPerBatchPath\"")     if max_input_bytes_per_batch && max_input_bytes_per_batch_path
+        invalid_field_error!("MaxItemsPerBatch", max_items_per_batch, "must be a positive integer")            if max_items_per_batch && max_items_per_batch <= 0
+        invalid_field_error!("MaxInputBytesPerBatch", max_input_bytes_per_batch, "must be a positive integer") if max_input_bytes_per_batch && max_input_bytes_per_batch <= 0
       end
 
       def value(context, input, state_input = nil)
