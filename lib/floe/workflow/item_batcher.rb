@@ -30,17 +30,29 @@ module Floe
       def value(context, input, state_input = nil)
         state_input ||= input
 
-        max_items       = max_items_per_batch       || max_items_per_batch_path&.value(context, state_input)
-        max_input_bytes = max_input_bytes_per_batch || max_input_bytes_per_batch_path&.value(context, state_input)
-
-        raise runtime_field_error!("MaxItemsPerBatchPath", max_items, "must be a positive integer")            if max_items && max_items <= 0
-        raise runtime_field_error!("MaxInputBytesPerBatchPath", max_input_bytes, "must be a positive integer") if max_input_bytes && max_input_bytes <= 0
-
         output = batch_input ? batch_input.value(context, state_input) : {}
 
-        input.each_slice(max_items).map do |batch|
+        input.each_slice(max_items(context, state_input)).map do |batch|
           output.merge("Items" => batch)
         end
+      end
+
+      def max_items(context, state_input)
+        return    max_items_per_batch if max_items_per_batch
+        return if max_items_per_batch_path.nil?
+        result = max_items_per_batch_path.value(context, state_input)
+        raise runtime_field_error!("MaxItemsPerBatchPath", result, "must be a positive integer") if result <= 0
+
+        result
+      end
+
+      def max_input_bytes(context, state_input)
+        return    max_input_bytes_per_batch if max_input_bytes_per_batch.present?
+        return if max_input_bytes_per_batch_path.nil?
+        result = max_input_bytes_per_batch_path.value(context, state_input)
+        raise runtime_field_error!("MaxInputBytesPerBatchPath", result, "must be a positive integer") if result <= 0
+
+        result
       end
     end
   end
