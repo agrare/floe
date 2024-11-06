@@ -29,7 +29,9 @@ module Floe
         max_items       = max_items_per_batch       || max_items_per_batch_path&.value(context, input)
         max_input_bytes = max_input_bytes_per_batch || max_input_bytes_per_batch_path&.value(context, input)
 
-        input.each_slice(max_items).to_a
+        input.each_slice(max_items).map do |batch|
+          {"Items" => batch}
+        end
       end
     end
   end

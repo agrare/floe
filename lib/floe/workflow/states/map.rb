@@ -43,7 +43,9 @@ module Floe
 
         def process_input(context)
           input = super
-          items_path.value(context, input)
+          input = items_path.value(context, input)
+          input = item_batcher.value(context, input) if item_batcher
+          input
         end
 
         def start(context)
