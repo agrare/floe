@@ -17,14 +17,7 @@ module Floe
         @max_items_per_batch_path       = ReferencePath.new(payload["MaxItemsPerBatchPath"])      if payload["MaxItemsPerBatchPath"]
         @max_input_bytes_per_batch_path = ReferencePath.new(payload["MaxInputBytesPerBatchPath"]) if payload["MaxInputBytesPerBatchPath"]
 
-        if [max_items_per_batch, max_input_bytes_per_batch, max_items_per_batch_path, max_input_bytes_per_batch_path].all?(&:nil?)
-          parser_error!("must have one of \"MaxItemsPerBatch\", \"MaxItemsPerBatchPath\", \"MaxInputBytesPerBatch\", \"MaxInputBytesPerBatchPath\"")
-        end
-
-        parser_error!("must not specify both \"MaxItemsPerBatch\" and \"MaxItemsPerBatchPath\"")               if max_items_per_batch && max_items_per_batch_path
-        parser_error!("must not specify both \"MaxInputBytesPerBatch\" and \"MaxInputBytesPerBatchPath\"")     if max_input_bytes_per_batch && max_input_bytes_per_batch_path
-        invalid_field_error!("MaxItemsPerBatch", max_items_per_batch, "must be a positive integer")            if max_items_per_batch && max_items_per_batch <= 0
-        invalid_field_error!("MaxInputBytesPerBatch", max_input_bytes_per_batch, "must be a positive integer") if max_input_bytes_per_batch && max_input_bytes_per_batch <= 0
+        validate!
       end
 
       def value(context, input, state_input = nil)
@@ -36,6 +29,8 @@ module Floe
           output.merge("Items" => batch)
         end
       end
+
+      private
 
       def max_items(context, state_input)
         return    max_items_per_batch if max_items_per_batch
@@ -53,6 +48,17 @@ module Floe
         raise runtime_field_error!("MaxInputBytesPerBatchPath", result, "must be a positive integer") if result <= 0
 
         result
+      end
+
+      def validate!
+        if [max_items_per_batch, max_input_bytes_per_batch, max_items_per_batch_path, max_input_bytes_per_batch_path].all?(&:nil?)
+          parser_error!("must have one of \"MaxItemsPerBatch\", \"MaxItemsPerBatchPath\", \"MaxInputBytesPerBatch\", \"MaxInputBytesPerBatchPath\"")
+        end
+
+        parser_error!("must not specify both \"MaxItemsPerBatch\" and \"MaxItemsPerBatchPath\"")               if max_items_per_batch && max_items_per_batch_path
+        parser_error!("must not specify both \"MaxInputBytesPerBatch\" and \"MaxInputBytesPerBatchPath\"")     if max_input_bytes_per_batch && max_input_bytes_per_batch_path
+        invalid_field_error!("MaxItemsPerBatch", max_items_per_batch, "must be a positive integer")            if max_items_per_batch && max_items_per_batch <= 0
+        invalid_field_error!("MaxInputBytesPerBatch", max_input_bytes_per_batch, "must be a positive integer") if max_input_bytes_per_batch && max_input_bytes_per_batch <= 0
       end
     end
   end
