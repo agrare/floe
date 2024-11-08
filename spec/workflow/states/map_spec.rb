@@ -169,6 +169,40 @@ RSpec.describe Floe::Workflow::States::Map do
       end
     end
 
+    context "with an ItemSelector" do
+      let(:input) { {"delivery-partner" => "ACME", "colors" => ["red", "green", "blue"]} }
+      let(:workflow) do
+        payload = {
+          "Validate-All" => {
+            "Type"           => "Map",
+            "ItemsPath"      => "$.colors",
+            "ItemSelector"   => {
+              "index.$"   => "$$.Map.Item.Index",
+              "value.$"   => "$$.Map.Item.Value",
+              "courier.$" => "$.delivery-partner"
+            },
+            "MaxConcurrency" => 1,
+            "ItemProcessor"  => {
+              "StartAt" => "Validate",
+              "States"  => {
+                "Validate" => {
+                  "Type" => "Pass",
+                  "End"  => true
+                }
+              }
+            },
+            "End"            => true,
+          }
+        }
+        make_workflow(ctx, payload)
+      end
+
+      it "sets the context output" do
+        loop while state.run_nonblock!(ctx) != 0
+        expect(ctx.output).to eq([{"index" => 0, "value" => "red", "courier" => "ACME"}, {"index" => 1, "value" => "green", "courier" => "ACME"}, {"index" => 2, "value" => "blue", "courier" => "ACME"}])
+      end
+    end
+
     context "with an ItemBatcher" do
       let(:input) { {"foo" => "bar", "colors" => ["red", "green", "blue"]} }
       let(:workflow) do

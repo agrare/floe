@@ -31,7 +31,7 @@ module Floe
           @item_processor  = ItemProcessor.new(payload["ItemProcessor"], name)
           @items_path      = ReferencePath.new(payload.fetch("ItemsPath", "$"))
           @item_reader     = payload["ItemReader"]
-          @item_selector   = payload["ItemSelector"]
+          @item_selector   = PayloadTemplate.new(payload["ItemSelector"]) if payload["ItemSelector"]
           @item_batcher    = ItemBatcher.new(payload["ItemBatcher"], name + ["ItemBatcher"]) if payload["ItemBatcher"]
           @result_writer   = payload["ResultWriter"]
           @max_concurrency = payload["MaxConcurrency"]&.to_i
@@ -53,7 +53,20 @@ module Floe
 
           input = process_input(context)
 
-          context.state["ItemProcessorContext"] = input.map { |item| Context.new({"Execution" => {"Id" => context.execution["Id"]}}, :input => item.to_json).to_h }
+          context.state["ItemProcessorContext"] = input.map.with_index do |item, index|
+            item_processor_context = {
+              "Execution" => {
+                "Id" => context.execution["Id"]
+              },
+              "Map" => {
+                "Item" => {"Index" => index, "Value" => item}
+              }
+            }
+
+            item_processor_input = item_selector ? item_selector.value(item_processor_context, context.state["Input"]) : item
+
+            Context.new(item_processor_context, :input => item_processor_input.to_json).to_h
+          end
         end
 
         def end?
