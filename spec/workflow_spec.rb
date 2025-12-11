@@ -45,6 +45,24 @@ RSpec.describe Floe::Workflow do
 
       expect { described_class.new(payload, "invalid context") }.to raise_error(Floe::InvalidExecutionInput, /Invalid State Machine Execution Input: unexpected character: /)
     end
+
+    it "raises an exception for TimeoutSeconds string" do
+      payload = {"StartAt" => "FirstState", "TimeoutSeconds" => "10", "States" => {"FirstState" => {"Type" => "Succeed"}}}
+
+      expect { described_class.new(payload) }.to raise_error(Floe::InvalidWorkflowError, "State Machine field \"TimeoutSeconds\" value \"10\" must be a positive, non-zero integer")
+    end
+
+    it "raises an exception for a negative TimeoutSeconds" do
+      payload = {"StartAt" => "FirstState", "TimeoutSeconds" => -1, "States" => {"FirstState" => {"Type" => "Succeed"}}}
+
+      expect { described_class.new(payload) }.to raise_error(Floe::InvalidWorkflowError, "State Machine field \"TimeoutSeconds\" value \"-1\" must be a positive, non-zero integer")
+    end
+
+    it "raises an exception for a zero TimeoutSeconds" do
+      payload = {"StartAt" => "FirstState", "TimeoutSeconds" => 0, "States" => {"FirstState" => {"Type" => "Succeed"}}}
+
+      expect { described_class.new(payload) }.to raise_error(Floe::InvalidWorkflowError, "State Machine field \"TimeoutSeconds\" value \"0\" must be a positive, non-zero integer")
+    end
   end
 
   describe "#run_nonblock" do

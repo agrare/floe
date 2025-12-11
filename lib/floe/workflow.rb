@@ -77,7 +77,7 @@ module Floe
       end
     end
 
-    attr_reader :comment, :context
+    attr_reader :comment, :context, :timeout_seconds
 
     def initialize(payload, context = nil, credentials = nil, name = nil)
       payload     = JSON.parse(payload)     if payload.kind_of?(String)
@@ -88,8 +88,9 @@ module Floe
       # caller should really put credentials into context and not pass that variable
       context.credentials = credentials if credentials
 
-      @context = context
-      @comment = payload["Comment"]
+      @context         = context
+      @comment         = payload["Comment"]
+      @timeout_seconds = payload["TimeoutSeconds"]
 
       super(payload, name)
     rescue Floe::Error
@@ -169,6 +170,11 @@ module Floe
     end
 
     private
+
+    def validate_workflow!
+      super
+      invalid_field_error!("TimeoutSeconds", timeout_seconds, "must be a positive, non-zero integer") if timeout_seconds && (!timeout_seconds.kind_of?(Integer) || timeout_seconds <= 0)
+    end
 
     def step!
       next_state = {"Name" => context.next_state, "Guid" => SecureRandom.uuid, "PreviousStateGuid" => context.state["Guid"]}
