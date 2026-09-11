@@ -10,6 +10,10 @@ module Floe
       RUNNING_PHASES  = %w[Pending Running].freeze
       FAILURE_REASONS = %w[CrashLoopBackOff ImagePullBackOff ErrImagePull].freeze
 
+      DEFAULT_SIDECAR_IMAGE    = "curlimages/curl:latest"
+      SIDECAR_CONTAINER_NAME   = "floe-sidecar"
+      READY_SENTINEL           = ".floe-ready"
+
       def initialize(options = {})
         require "active_support/core_ext/hash/keys" # deep_stringify_keys
         require "awesome_spawn"
@@ -42,10 +46,16 @@ module Floe
         @pull_policy          = options["pull-policy"]
         @task_service_account = options["task_service_account"]
 
+        @s3_endpoint   = options["s3_endpoint"]
+        @s3_bucket     = options["s3_bucket"]
+        @s3_access_key = options["s3_access_key"]
+        @s3_secret_key = options["s3_secret_key"]
+        @sidecar_image = options.fetch("sidecar_image", DEFAULT_SIDECAR_IMAGE)
+
         super
       end
 
-      def run_async!(resource, env, secrets, context)
+      def run_async!(resource, env, secrets, context, volumes: [])
         raise ArgumentError, "Invalid resource" unless resource&.start_with?("docker://")
 
         image  = resource.sub("docker://", "")
@@ -54,8 +64,13 @@ module Floe
         execution_id   = context.execution["Id"]
         runner_context = {"container_ref" => name, "container_state" => {"phase" => "Pending"}, "secrets_ref" => secret}
 
+        staged_volumes = stage_volumes(volumes, execution_id, context.logger) if volumes.any?
+        runner_context["s3_object_keys"] = staged_volumes.map { |sv| sv[:s3_key] } if staged_volumes
+
         begin
-          create_pod!(name, image, env, execution_id, secret)
+          spec = pod_spec(name, image, env, execution_id, secret, staged_volumes || [])
+          kubeclient.create_pod(spec)
+          runner_context["log_container"] = spec.dig(:metadata, :annotations, "floe/log_container")
           runner_context
         rescue Kubeclient::HttpError => err
           cleanup(runner_context)
@@ -93,7 +108,9 @@ module Floe
           failed_state = failed_container_states(runner_context).first
           {"Error" => failed_state["reason"], "Cause" => failed_state["message"]}
         else
-          runner_context["output"] = kubeclient.get_pod_log(runner_context["container_ref"], namespace).body
+          log_options = {}
+          log_options[:container] = runner_context["log_container"] if runner_context["log_container"]
+          runner_context["output"] = kubeclient.get_pod_log(runner_context["container_ref"], namespace, **log_options).body
         end
       end
 
@@ -102,6 +119,8 @@ module Floe
 
         delete_pod(pod)       if pod
         delete_secret(secret) if secret
+
+        Array(runner_context["s3_object_keys"]).each { |key| delete_s3_object(key) }
       end
 
       def wait(timeout: nil, events: %i[create update delete])
@@ -152,31 +171,108 @@ module Floe
         end
       end
 
+      def inspect
+        vars = instance_variables_to_inspect.map { |ivar| "#{ivar}=#{instance_variable_get(ivar).inspect}" }.join(", ")
+        prefix = Kernel.instance_method(:inspect).bind_call(self).split(' ', 2).first
+        "#{prefix} #{vars}>"
+      end
+
       private
 
-      attr_reader :ca_file, :kubeconfig_file, :kubeconfig_context, :namespace, :server, :token, :verify_ssl
+      attr_reader :ca_file, :kubeconfig_file, :kubeconfig_context, :namespace, :server, :token, :verify_ssl,
+                  :s3_endpoint, :s3_bucket, :s3_access_key, :s3_secret_key, :sidecar_image
 
-      def pod_info(pod_name)
-        kubeclient.get_pod(pod_name, namespace)
-      rescue Kubeclient::HttpError => err
-        raise Floe::ExecutionError, "Failed to get status for pod #{namespace}/#{pod_name}: #{err}"
+      def instance_variables_to_inspect
+        instance_variables - %i[@kubeclient @s3_access_key @s3_client @s3_secret_key @token]
       end
 
-      def pod_running?(context)
-        RUNNING_PHASES.include?(context.dig("container_state", "phase"))
+      # ------------------------------------------------------------------
+      # S3 volume staging
+      # ------------------------------------------------------------------
+
+      def s3_configured?
+        !!(s3_endpoint && s3_bucket && s3_access_key && s3_secret_key)
       end
 
-      def failed_container_states(context)
-        container_statuses = context.dig("container_state", "containerStatuses") || []
-        container_statuses.filter_map { |status| status["state"]&.values&.first }
-                          .select { |state| FAILURE_REASONS.include?(state["reason"]) }
+      def s3_client
+        require "aws-sdk-s3"
+
+        @s3_client ||= Aws::S3::Client.new(
+          :endpoint         => s3_endpoint,
+          :region           => "us-east-1", # required by SDK even for non-AWS endpoints
+          :access_key_id     => s3_access_key,
+          :secret_access_key => s3_secret_key,
+          :force_path_style  => true         # required for MinIO and other non-AWS endpoints
+        )
       end
 
-      def container_failed?(context)
-        failed_container_states(context).any?
+      # Upload each volume's host_path as a .tar.gz to S3, returning an array
+      # of hashes with :volume, :s3_key, :presigned_input_url.
+      def stage_volumes(volumes, execution_id, logger)
+        raise ArgumentError, "S3 must be configured (s3_endpoint, s3_bucket, s3_access_key, s3_secret_key) to use volumes with Kubernetes" unless s3_configured?
+
+        volumes.map do |volume|
+          s3_key = "floe/#{execution_id}/#{File.basename(volume[:container_path])}.tar.gz"
+          logger.debug("Staging volume #{volume[:host_path]} -> s3://#{s3_bucket}/#{s3_key}")
+
+          tarball = create_tarball(volume[:host_path])
+          upload_to_s3(s3_key, tarball)
+          presigned_url = presign_s3_get(s3_key)
+
+          {:volume => volume, :s3_key => s3_key, :presigned_input_url => presigned_url}
+        end
       end
 
-      def pod_spec(name, image, env, execution_id, secret = nil)
+      def create_tarball(source_path)
+        require "rubygems/package"
+        require "zlib"
+
+        # TarWriter requires a seekable IO (pos=), so build the tar into a
+        # plain StringIO first, then gzip the result.
+        tar_buffer = StringIO.new
+        Gem::Package::TarWriter.new(tar_buffer) do |tar|
+          Dir.glob("#{source_path}/**/*", File::FNM_DOTMATCH).sort.each do |file|
+            relative = file.sub("#{source_path}/", "")
+            next if relative == "." || relative.empty?
+
+            stat = File.stat(file)
+            if stat.directory?
+              tar.mkdir(relative, stat.mode)
+            else
+              tar.add_file(relative, stat.mode) do |io|
+                File.open(file, "rb") { |f| IO.copy_stream(f, io) }
+              end
+            end
+          end
+        end
+
+        gz_buffer = StringIO.new
+        Zlib::GzipWriter.wrap(gz_buffer) { |gz| gz.write(tar_buffer.string) }
+        gz_buffer.string
+      end
+
+      def upload_to_s3(key, data)
+        s3_client.put_object(:bucket => s3_bucket, :key => key, :body => data)
+      end
+
+      def presign_s3_get(key)
+        require "aws-sdk-s3"
+
+        presigner = Aws::S3::Presigner.new(:client => s3_client)
+        presigner.presigned_url(:get_object, :bucket => s3_bucket, :key => key, :expires_in => 3600)
+      end
+
+      def delete_s3_object(key)
+        s3_client.delete_object(:bucket => s3_bucket, :key => key)
+      rescue StandardError
+        nil
+      end
+
+      # ------------------------------------------------------------------
+      # Pod spec construction
+      # ------------------------------------------------------------------
+
+      def pod_spec(name, image, env, execution_id, secret = nil, staged_volumes = [])
         spec = {
           :kind       => "Pod",
           :apiVersion => "v1",
@@ -222,11 +318,110 @@ module Floe
           ]
         end
 
+        add_staged_volumes_to_spec!(spec, name, staged_volumes) if staged_volumes.any?
+
         spec
       end
 
-      def create_pod!(name, image, env, execution_id, secret = nil)
-        kubeclient.create_pod(pod_spec(name, image, env, execution_id, secret))
+      # Mutates spec in-place to add the emptyDir shared volumes, sidecar
+      # container, and ready-poll CMD override on the primary container.
+      def add_staged_volumes_to_spec!(spec, name, staged_volumes)
+        spec[:spec][:volumes] ||= []
+        primary = spec[:spec][:containers][0]
+        primary[:volumeMounts] ||= []
+
+        sidecar_download_cmds = []
+        sidecar_wait_cmds     = []
+        sidecar_upload_cmds   = []
+        sidecar_volume_mounts = []
+
+        staged_volumes.each_with_index do |sv, idx|
+          volume     = sv[:volume]
+          share_name = "floe-volume-#{idx}"
+
+          # emptyDir shared between sidecar and primary
+          spec[:spec][:volumes] << {:name => share_name, :emptyDir => {}}
+
+          # Primary container mounts the shared volume at the requested path
+          primary[:volumeMounts] << {
+            :name      => share_name,
+            :mountPath => volume[:container_path]
+          }
+
+          sidecar_volume_mounts << {
+            :name      => share_name,
+            :mountPath => volume[:container_path]
+          }
+
+          # Sidecar: download and unpack this volume's tarball
+          sidecar_download_cmds << "curl -fsSL '#{sv[:presigned_input_url]}' | tar -xzf - -C '#{volume[:container_path]}'"
+
+          # Sidecar: wait for completion sentinel if provided
+          if volume[:completion_path]
+            sidecar_wait_cmds << "until [ -f '#{volume[:completion_path]}' ]; do sleep 1; done"
+          end
+
+          # Sidecar: upload output if output_path is provided
+          if volume[:output_path]
+            upload_key    = sv[:s3_key].sub("input", "output")
+            presigned_put = presign_s3_put(upload_key)
+            sidecar_upload_cmds << "tar -czf - -C '#{volume[:output_path]}' . | curl -fsSL -T - '#{presigned_put}'"
+          end
+        end
+
+        # Write the ready sentinel after all volumes are unpacked
+        sidecar_download_cmds << "touch '#{staged_volumes.first[:volume][:container_path]}/#{READY_SENTINEL}'"
+
+        sidecar_cmd = (sidecar_download_cmds + sidecar_wait_cmds + sidecar_upload_cmds).join(" && ")
+
+        # Primary container: poll for the ready sentinel before executing
+        ready_check = "until [ -f '#{staged_volumes.first[:volume][:container_path]}/#{READY_SENTINEL}' ]; do sleep 0.5; done"
+        original_cmd = primary.delete(:command)
+        primary[:command] = ["sh", "-c", "#{ready_check} && #{original_cmd ? original_cmd.join(' ') : 'exec \"$@\"'}"]
+        primary[:args]    = original_cmd ? [] : primary.delete(:args) || []
+
+        spec[:spec][:containers] << {
+          :name         => SIDECAR_CONTAINER_NAME,
+          :image        => sidecar_image,
+          :command      => ["sh", "-c", sidecar_cmd],
+          :volumeMounts => sidecar_volume_mounts
+        }
+
+        # Record the primary container name so output() knows which logs to fetch
+        spec[:metadata] ||= {}
+        spec[:metadata][:annotations] ||= {}
+        spec[:metadata][:annotations]["floe/log_container"] = primary[:name]
+      end
+
+      def presign_s3_put(key)
+        require "aws-sdk-s3"
+
+        presigner = Aws::S3::Presigner.new(:client => s3_client)
+        presigner.presigned_url(:put_object, :bucket => s3_bucket, :key => key, :expires_in => 3600)
+      end
+
+      # ------------------------------------------------------------------
+      # Pod / secret lifecycle
+      # ------------------------------------------------------------------
+
+      def pod_info(pod_name)
+        kubeclient.get_pod(pod_name, namespace)
+      rescue Kubeclient::HttpError => err
+        raise Floe::ExecutionError, "Failed to get status for pod #{namespace}/#{pod_name}: #{err}"
+      end
+
+      def pod_running?(context)
+        RUNNING_PHASES.include?(context.dig("container_state", "phase"))
+      end
+
+      def failed_container_states(context)
+        container_statuses = context.dig("container_state", "containerStatuses") || []
+        container_statuses.filter_map { |status| status["state"]&.values&.first }
+                          .select { |state| FAILURE_REASONS.include?(state["reason"]) }
+      end
+
+      def container_failed?(context)
+        failed_container_states(context).any?
       end
 
       def delete_pod!(name)

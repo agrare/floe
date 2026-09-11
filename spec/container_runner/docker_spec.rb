@@ -61,16 +61,28 @@ RSpec.describe Floe::ContainerRunner::Docker do
     end
 
     context "with volumes" do
-      it "passes a single volume to docker run" do
+      it "defaults volume options to z" do
         stub_good_run!("docker", :params => ["run", :detach, [:label, "execution_id=#{execution_id}"], [:v, "/tmp/runner:/runner:z"], [:name, a_string_starting_with("floe-hello-world-")], "hello-world:latest"], :output => "#{container_id}\n")
 
-        subject.run_async!("docker://hello-world:latest", {}, {}, context, :volumes => ["/tmp/runner:/runner:z"])
+        subject.run_async!("docker://hello-world:latest", {}, {}, context, :volumes => [{:host_path => "/tmp/runner", :container_path => "/runner"}])
+      end
+
+      it "uses caller-supplied options when provided" do
+        stub_good_run!("docker", :params => ["run", :detach, [:label, "execution_id=#{execution_id}"], [:v, "/tmp/runner:/runner:ro"], [:name, a_string_starting_with("floe-hello-world-")], "hello-world:latest"], :output => "#{container_id}\n")
+
+        subject.run_async!("docker://hello-world:latest", {}, {}, context, :volumes => [{:host_path => "/tmp/runner", :container_path => "/runner", :options => "ro"}])
+      end
+
+      it "omits options when explicitly set to nil" do
+        stub_good_run!("docker", :params => ["run", :detach, [:label, "execution_id=#{execution_id}"], [:v, "/tmp/runner:/runner"], [:name, a_string_starting_with("floe-hello-world-")], "hello-world:latest"], :output => "#{container_id}\n")
+
+        subject.run_async!("docker://hello-world:latest", {}, {}, context, :volumes => [{:host_path => "/tmp/runner", :container_path => "/runner", :options => nil}])
       end
 
       it "passes multiple volumes to docker run" do
-        stub_good_run!("docker", :params => ["run", :detach, [:label, "execution_id=#{execution_id}"], [:v, "/tmp/a:/a:z"], [:v, "/tmp/b:/b:z"], [:name, a_string_starting_with("floe-hello-world-")], "hello-world:latest"], :output => "#{container_id}\n")
+        stub_good_run!("docker", :params => ["run", :detach, [:label, "execution_id=#{execution_id}"], [:v, "/tmp/a:/a:z"], [:v, "/tmp/b:/b:ro"], [:name, a_string_starting_with("floe-hello-world-")], "hello-world:latest"], :output => "#{container_id}\n")
 
-        subject.run_async!("docker://hello-world:latest", {}, {}, context, :volumes => ["/tmp/a:/a:z", "/tmp/b:/b:z"])
+        subject.run_async!("docker://hello-world:latest", {}, {}, context, :volumes => [{:host_path => "/tmp/a", :container_path => "/a"}, {:host_path => "/tmp/b", :container_path => "/b", :options => "ro"}])
       end
 
       it "passes no volumes when volumes is empty" do

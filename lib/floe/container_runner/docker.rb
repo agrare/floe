@@ -146,9 +146,16 @@ module Floe
         params << [:net, "host"] if @network == "host"
         params << [:label, "execution_id=#{execution_id}"]
         params << [:v, "#{secrets_file}:/run/secrets:z"] if secrets_file
-        params += volumes.map { |v| [:v, v] }
+        params += volumes.map { |v| [:v, volume_to_flag(v)] }
         params << [:name, container_name(image)]
         params << image
+      end
+
+      def volume_to_flag(volume)
+        options = volume.fetch(:options, "z")
+        flag    = "#{volume[:host_path]}:#{volume[:container_path]}"
+        flag   += ":#{options}" if options && !options.empty?
+        flag
       end
 
       def wait_params(until_timestamp)

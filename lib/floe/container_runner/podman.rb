@@ -39,7 +39,7 @@ module Floe
         params << [:net, "host"]        if @network == "host"
         params << [:label, "execution_id=#{execution_id}"]
         params << [:secret, secret] if secret
-        params += volumes.map { |v| [:v, v] }
+        params += volumes.map { |v| [:v, volume_to_flag(v)] }
         params << [:name, container_name(image)]
         params << image
       end
