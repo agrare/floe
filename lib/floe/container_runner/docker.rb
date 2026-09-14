@@ -153,7 +153,8 @@ module Floe
 
       def volume_to_flag(volume)
         options = volume.fetch(:options, "z")
-        flag    = "#{volume[:host_path]}:#{volume[:container_path]}"
+        source  = volume[:volume_name] || volume[:host_path]
+        flag    = "#{source}:#{volume[:container_path]}"
         flag   += ":#{options}" if options && !options.empty?
         flag
       end

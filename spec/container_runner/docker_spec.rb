@@ -90,6 +90,18 @@ RSpec.describe Floe::ContainerRunner::Docker do
 
         subject.run_async!("docker://hello-world:latest", {}, {}, context, :volumes => [])
       end
+
+      it "passes a named volume using volume_name" do
+        stub_good_run!("docker", :params => ["run", :detach, [:label, "execution_id=#{execution_id}"], [:v, "my-vol:/runner:z"], [:name, a_string_starting_with("floe-hello-world-")], "hello-world:latest"], :output => "#{container_id}\n")
+
+        subject.run_async!("docker://hello-world:latest", {}, {}, context, :volumes => [{:volume_name => "my-vol", :container_path => "/runner"}])
+      end
+
+      it "passes a named volume with explicit options" do
+        stub_good_run!("docker", :params => ["run", :detach, [:label, "execution_id=#{execution_id}"], [:v, "my-vol:/runner:ro"], [:name, a_string_starting_with("floe-hello-world-")], "hello-world:latest"], :output => "#{container_id}\n")
+
+        subject.run_async!("docker://hello-world:latest", {}, {}, context, :volumes => [{:volume_name => "my-vol", :container_path => "/runner", :options => "ro"}])
+      end
     end
   end
 

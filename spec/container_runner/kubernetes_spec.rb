@@ -630,6 +630,105 @@ RSpec.describe Floe::ContainerRunner::Kubernetes do
     end
   end
 
+  describe "#run_async! with pre-made volumes" do
+    it "does not require S3 when only pre-made volumes are given" do
+      runner = described_class.new(runner_options)
+      expect(kubeclient).to receive(:create_pod)
+
+      runner.run_async!("docker://hello-world:latest", {}, {}, context,
+                        :volumes => [{:volume_name => "my-pvc", :container_path => "/data"}])
+    end
+
+    it "adds the PVC volume and volumeMount to the pod spec" do
+      expect(kubeclient).to receive(:create_pod) do |spec|
+        vols   = spec.dig(:spec, :volumes)
+        mounts = spec.dig(:spec, :containers, 0, :volumeMounts)
+
+        expect(vols).to include(hash_including(:name => "floe-pre-made-volume-0", :persistentVolumeClaim => {:claimName => "my-pvc"}))
+        expect(mounts).to include(hash_including(:name => "floe-pre-made-volume-0", :mountPath => "/data"))
+      end
+
+      subject.run_async!("docker://hello-world:latest", {}, {}, context,
+                         :volumes => [{:volume_name => "my-pvc", :container_path => "/data"}])
+    end
+
+    it "omits readOnly when not set" do
+      expect(kubeclient).to receive(:create_pod) do |spec|
+        mount = spec.dig(:spec, :containers, 0, :volumeMounts, 0)
+        expect(mount).not_to have_key(:readOnly)
+      end
+
+      subject.run_async!("docker://hello-world:latest", {}, {}, context,
+                         :volumes => [{:volume_name => "my-pvc", :container_path => "/data"}])
+    end
+
+    it "includes readOnly when read_only is true" do
+      expect(kubeclient).to receive(:create_pod) do |spec|
+        mount = spec.dig(:spec, :containers, 0, :volumeMounts, 0)
+        expect(mount).to include(:readOnly => true)
+      end
+
+      subject.run_async!("docker://hello-world:latest", {}, {}, context,
+                         :volumes => [{:volume_name => "my-pvc", :container_path => "/data", :read_only => true}])
+    end
+
+    it "supports multiple pre-made volumes" do
+      expect(kubeclient).to receive(:create_pod) do |spec|
+        vols   = spec.dig(:spec, :volumes)
+        mounts = spec.dig(:spec, :containers, 0, :volumeMounts)
+
+        expect(vols.size).to eq(2)
+        expect(mounts.size).to eq(2)
+        expect(vols[0]).to include(:name => "floe-pre-made-volume-0", :persistentVolumeClaim => {:claimName => "pvc-a"})
+        expect(vols[1]).to include(:name => "floe-pre-made-volume-1", :persistentVolumeClaim => {:claimName => "pvc-b"})
+      end
+
+      subject.run_async!("docker://hello-world:latest", {}, {}, context,
+                         :volumes => [
+                           {:volume_name => "pvc-a", :container_path => "/a"},
+                           {:volume_name => "pvc-b", :container_path => "/b"}
+                         ])
+    end
+
+    it "mixes pre-made and staged volumes together" do
+      let_s3_runner = described_class.new(runner_options.merge(
+                                            "s3_endpoint"   => "https://minio.example.com",
+                                            "s3_bucket"     => "floe-inputs",
+                                            "s3_access_key" => "access",
+                                            "s3_secret_key" => "secret"
+                                          ))
+
+      source_dir = Dir.mktmpdir
+      FileUtils.touch(File.join(source_dir, "env"))
+
+      begin
+        require "aws-sdk-s3"
+        s3_client = instance_double(Aws::S3::Client)
+        presigner = instance_double(Aws::S3::Presigner)
+        allow(Aws::S3::Client).to receive(:new).and_return(s3_client)
+        allow(Aws::S3::Presigner).to receive(:new).and_return(presigner)
+        allow(s3_client).to receive(:put_object)
+        allow(s3_client).to receive(:delete_object)
+        allow(presigner).to receive(:presigned_url).and_return("https://minio.example.com/presigned")
+
+        expect(kubeclient).to receive(:create_pod) do |spec|
+          vols = spec.dig(:spec, :volumes)
+          # emptyDir from staged + PVC from pre-made
+          expect(vols).to include(hash_including(:emptyDir => {}))
+          expect(vols).to include(hash_including(:persistentVolumeClaim => {:claimName => "my-pvc"}))
+        end
+
+        let_s3_runner.run_async!("docker://hello-world:latest", {}, {}, context,
+                                 :volumes => [
+                                   {:host_path => source_dir, :container_path => "/staged"},
+                                   {:volume_name => "my-pvc", :container_path => "/data"}
+                                 ])
+      ensure
+        FileUtils.remove_entry(source_dir)
+      end
+    end
+  end
+
   describe "#cleanup with s3_object_keys" do
     let(:s3_runner_options) do
       runner_options.merge(
