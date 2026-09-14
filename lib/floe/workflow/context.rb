@@ -11,12 +11,11 @@ module Floe
       # @param input [Hash] (default: {})
       def initialize(context = nil, input: nil, credentials: nil, logger: nil)
         context = JSON.parse(context) if context.kind_of?(String)
-        input   = JSON.parse(input || "{}")
 
         @context = context || {}
         self["Credentials"]        ||= credentials || {}
         self["Execution"]          ||= {}
-        self["Execution"]["Input"] ||= input
+        self["Execution"]["Input"] ||= JSON.parse(input || "{}")
         self["State"]              ||= {}
         self["StateHistory"]       ||= []
         self["StateMachine"]       ||= {}
