@@ -10,9 +10,8 @@ module Floe
       RUNNING_PHASES  = %w[Pending Running].freeze
       FAILURE_REASONS = %w[CrashLoopBackOff ImagePullBackOff ErrImagePull].freeze
 
-      DEFAULT_SIDECAR_IMAGE    = "curlimages/curl:latest"
-      SIDECAR_CONTAINER_NAME   = "floe-sidecar"
-      READY_SENTINEL           = ".floe-ready"
+      DEFAULT_SIDECAR_IMAGE  = "curlimages/curl:latest"
+      SIDECAR_CONTAINER_NAME = "floe-sidecar"
 
       def initialize(options = {})
         require "active_support/core_ext/hash/keys" # deep_stringify_keys
@@ -70,7 +69,10 @@ module Floe
         begin
           spec = pod_spec(name, image, env, execution_id, secret, staged_volumes || [])
           kubeclient.create_pod(spec)
-          runner_context["log_container"] = spec.dig(:metadata, :annotations, "floe/log_container")
+          # Always record the primary container name so get_pod_log targets the
+          # right container even when init containers are present.
+          primary_name = spec.dig(:spec, :containers, 0, :name)
+          runner_context["log_container"] = spec.dig(:metadata, :annotations, "floe/log_container") || primary_name
           runner_context
         rescue Kubeclient::HttpError => err
           cleanup(runner_context)
@@ -330,67 +332,78 @@ module Floe
         primary = spec[:spec][:containers][0]
         primary[:volumeMounts] ||= []
 
-        sidecar_download_cmds = []
-        sidecar_wait_cmds     = []
-        sidecar_upload_cmds   = []
-        sidecar_volume_mounts = []
+        init_cmds          = []
+        init_volume_mounts = []
+        upload_volumes     = []
 
         staged_volumes.each_with_index do |sv, idx|
           volume     = sv[:volume]
           share_name = "floe-volume-#{idx}"
 
-          # emptyDir shared between sidecar and primary
+          # emptyDir shared between init container and primary (and sidecar if uploading)
           spec[:spec][:volumes] << {:name => share_name, :emptyDir => {}}
 
-          # Primary container mounts the shared volume at the requested path
           primary[:volumeMounts] << {
             :name      => share_name,
             :mountPath => volume[:container_path]
           }
 
-          sidecar_volume_mounts << {
+          init_volume_mounts << {
             :name      => share_name,
             :mountPath => volume[:container_path]
           }
 
-          # Sidecar: download and unpack this volume's tarball
-          sidecar_download_cmds << "curl -fsSL '#{sv[:presigned_input_url]}' | tar -xzf - -C '#{volume[:container_path]}'"
+          # Init container downloads and unpacks each volume's tarball
+          init_cmds << "curl -fsSL '#{sv[:presigned_input_url]}' | tar -xzf - -C '#{volume[:container_path]}'"
 
-          # Sidecar: wait for completion sentinel if provided
-          if volume[:completion_path]
-            sidecar_wait_cmds << "until [ -f '#{volume[:completion_path]}' ]; do sleep 1; done"
-          end
-
-          # Sidecar: upload output if output_path is provided
-          if volume[:output_path]
+          # Track volumes that need output upload for the sidecar
+          if volume[:completion_path] && volume[:output_path]
             upload_key    = sv[:s3_key].sub("input", "output")
             presigned_put = presign_s3_put(upload_key)
-            sidecar_upload_cmds << "tar -czf - -C '#{volume[:output_path]}' . | curl -fsSL -T - '#{presigned_put}'"
+            upload_volumes << {
+              :share_name      => share_name,
+              :container_path  => volume[:container_path],
+              :completion_path => volume[:completion_path],
+              :output_path     => volume[:output_path],
+              :presigned_put   => presigned_put
+            }
           end
         end
 
-        # Write the ready sentinel after all volumes are unpacked
-        sidecar_download_cmds << "touch '#{staged_volumes.first[:volume][:container_path]}/#{READY_SENTINEL}'"
-
-        sidecar_cmd = (sidecar_download_cmds + sidecar_wait_cmds + sidecar_upload_cmds).join(" && ")
-
-        # Primary container: poll for the ready sentinel before executing
-        ready_check = "until [ -f '#{staged_volumes.first[:volume][:container_path]}/#{READY_SENTINEL}' ]; do sleep 0.5; done"
-        original_cmd = primary.delete(:command)
-        primary[:command] = ["sh", "-c", "#{ready_check} && #{original_cmd ? original_cmd.join(' ') : 'exec \"$@\"'}"]
-        primary[:args]    = original_cmd ? [] : primary.delete(:args) || []
-
-        spec[:spec][:containers] << {
-          :name         => SIDECAR_CONTAINER_NAME,
+        # Init container: runs to completion before the primary starts, populating
+        # all shared volumes from S3. Primary command/args are left untouched.
+        spec[:spec][:initContainers] ||= []
+        spec[:spec][:initContainers] << {
+          :name         => "#{SIDECAR_CONTAINER_NAME}-init",
           :image        => sidecar_image,
-          :command      => ["sh", "-c", sidecar_cmd],
-          :volumeMounts => sidecar_volume_mounts
+          :command      => ["sh", "-c", init_cmds.join(" && ")],
+          :volumeMounts => init_volume_mounts
         }
 
-        # Record the primary container name so output() knows which logs to fetch
-        spec[:metadata] ||= {}
-        spec[:metadata][:annotations] ||= {}
-        spec[:metadata][:annotations]["floe/log_container"] = primary[:name]
+        # Sidecar container: only added when output upload is needed. It waits
+        # for each completion sentinel then uploads output back to S3.
+        if upload_volumes.any?
+          sidecar_cmds         = []
+          sidecar_volume_mounts = []
+
+          upload_volumes.each do |uv|
+            sidecar_volume_mounts << {:name => uv[:share_name], :mountPath => uv[:container_path]}
+            sidecar_cmds << "until [ -f '#{uv[:completion_path]}' ]; do sleep 1; done"
+            sidecar_cmds << "tar -czf - -C '#{uv[:output_path]}' . | curl -fsSL -T - '#{uv[:presigned_put]}'"
+          end
+
+          spec[:spec][:containers] << {
+            :name         => SIDECAR_CONTAINER_NAME,
+            :image        => sidecar_image,
+            :command      => ["sh", "-c", sidecar_cmds.join(" && ")],
+            :volumeMounts => sidecar_volume_mounts
+          }
+
+          # Record the primary container name so output() knows which logs to fetch
+          spec[:metadata] ||= {}
+          spec[:metadata][:annotations] ||= {}
+          spec[:metadata][:annotations]["floe/log_container"] = primary[:name]
+        end
       end
 
       def presign_s3_put(key)

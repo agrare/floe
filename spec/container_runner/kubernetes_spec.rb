@@ -543,17 +543,23 @@ RSpec.describe Floe::ContainerRunner::Kubernetes do
       end.to raise_error(ArgumentError, /S3 must be configured/)
     end
 
-    it "uploads the volume to S3 and creates a pod with a sidecar" do
+    it "uploads the volume to S3 and creates a pod with an init container" do
       expect(s3_client).to receive(:put_object).with(
         hash_including(:bucket => "floe-inputs", :key => a_string_matching(%r{^floe/#{execution_id}/runner\.tar\.gz$}))
       )
 
       expected_pod_spec = hash_including(
         :spec => hash_including(
-          :volumes    => [hash_including(:emptyDir => {})],
+          :volumes        => [hash_including(:emptyDir => {})],
+          :initContainers => [
+            hash_including(
+              :name         => "floe-sidecar-init",
+              :image        => "curlimages/curl:latest",
+              :volumeMounts => [hash_including(:mountPath => "/runner")]
+            )
+          ],
           :containers => [
-            hash_including(:name => "floe-hello-world", :volumeMounts => [hash_including(:mountPath => "/runner")]),
-            hash_including(:name => "floe-sidecar",     :image => "curlimages/curl:latest")
+            hash_including(:name => "floe-hello-world", :volumeMounts => [hash_including(:mountPath => "/runner")])
           ]
         )
       )
@@ -563,11 +569,26 @@ RSpec.describe Floe::ContainerRunner::Kubernetes do
                          :volumes => [{:host_path => source_dir, :container_path => "/runner"}])
     end
 
-    it "sets log_container in runner_context when a sidecar is added" do
+    it "sets log_container to the primary container name even without an upload sidecar" do
       expect(kubeclient).to receive(:create_pod)
 
       result = subject.run_async!("docker://hello-world:latest", {}, {}, context,
                                   :volumes => [{:host_path => source_dir, :container_path => "/runner"}])
+      expect(result["log_container"]).to eq("floe-hello-world")
+    end
+
+    it "sets log_container in runner_context when a sidecar is added for output upload" do
+      allow(presigner).to receive(:presigned_url).with(:get_object, anything).and_return("https://minio.example.com/get")
+      allow(presigner).to receive(:presigned_url).with(:put_object, anything).and_return("https://minio.example.com/put")
+      expect(kubeclient).to receive(:create_pod)
+
+      result = subject.run_async!("docker://hello-world:latest", {}, {}, context,
+                                  :volumes => [{
+                                    :host_path       => source_dir,
+                                    :container_path  => "/runner",
+                                    :completion_path => "/runner/artifacts/rc",
+                                    :output_path     => "/runner/artifacts"
+                                  }])
       expect(result["log_container"]).to eq("floe-hello-world")
     end
 
@@ -582,14 +603,14 @@ RSpec.describe Floe::ContainerRunner::Kubernetes do
     it "uses a custom sidecar image when configured" do
       runner = described_class.new(s3_runner_options.merge("sidecar_image" => "busybox:latest"))
       expect(kubeclient).to receive(:create_pod).with(
-        hash_including(:spec => hash_including(:containers => include(hash_including(:name => "floe-sidecar", :image => "busybox:latest"))))
+        hash_including(:spec => hash_including(:initContainers => include(hash_including(:name => "floe-sidecar-init", :image => "busybox:latest"))))
       )
 
       runner.run_async!("docker://hello-world:latest", {}, {}, context,
                         :volumes => [{:host_path => source_dir, :container_path => "/runner"}])
     end
 
-    it "includes completion wait and output upload in sidecar command when completion_path and output_path are given" do
+    it "adds an output upload sidecar when completion_path and output_path are given" do
       allow(presigner).to receive(:presigned_url).with(:get_object, anything).and_return("https://minio.example.com/get")
       allow(presigner).to receive(:presigned_url).with(:put_object, anything).and_return("https://minio.example.com/put")
 
