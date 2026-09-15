@@ -71,7 +71,7 @@ module Floe
           kubeclient.create_pod(spec)
           # Always record the primary container name so get_pod_log targets the
           # right container even when init containers are present.
-          runner_context["log_container"] = spec.dig(:spec, :containers, 0, :name)
+          runner_context["primary_container"] = spec.dig(:spec, :containers, 0, :name)
           runner_context
         rescue Kubeclient::HttpError => err
           cleanup(runner_context)
@@ -110,7 +110,7 @@ module Floe
           {"Error" => failed_state["reason"], "Cause" => failed_state["message"]}
         else
           log_options = {}
-          log_options[:container] = runner_context["log_container"] if runner_context["log_container"]
+          log_options[:container] = runner_context["primary_container"] if runner_context["primary_container"]
           runner_context["output"] = kubeclient.get_pod_log(runner_context["container_ref"], namespace, **log_options).body
         end
       end

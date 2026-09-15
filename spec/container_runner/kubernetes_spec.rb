@@ -569,12 +569,12 @@ RSpec.describe Floe::ContainerRunner::Kubernetes do
                          :volumes => [{:host_path => source_dir, :container_path => "/runner"}])
     end
 
-    it "sets log_container to the primary container name" do
+    it "sets primary_container to the primary container name" do
       expect(kubeclient).to receive(:create_pod)
 
       result = subject.run_async!("docker://hello-world:latest", {}, {}, context,
                                   :volumes => [{:host_path => source_dir, :container_path => "/runner"}])
-      expect(result["log_container"]).to eq("floe-hello-world")
+      expect(result["primary_container"]).to eq("floe-hello-world")
     end
 
     it "stores staged_volumes in runner_context for cleanup" do
@@ -727,8 +727,8 @@ RSpec.describe Floe::ContainerRunner::Kubernetes do
     end
   end
 
-  describe "#output with log_container" do
-    let(:runner_context) { {"container_ref" => "my-pod", "log_container" => "floe-hello-world"} }
+  describe "#output with primary_container" do
+    let(:runner_context) { {"container_ref" => "my-pod", "primary_container" => "floe-hello-world"} }
 
     it "fetches logs from the named container" do
       expect(kubeclient).to receive(:get_pod_log).with("my-pod", "default", :container => "floe-hello-world")
