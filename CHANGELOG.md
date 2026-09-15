@@ -4,6 +4,10 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 
+## [0.20.1] - 2026-09-15
+### Fixed
+- Fix Execution Context not passed to Parallel branches ([#348](https://github.com/ManageIQ/floe/pull/348))
+
 ## [0.20.0] - 2026-07-08
 ### Fixed
 - Update to support io-wait v0.4 which drops the `IO#ready?` method ([#340](https://github.com/ManageIQ/floe/pull/340))
@@ -347,7 +351,8 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ### Added
 - Initial release
 
-[Unreleased]: https://github.com/ManageIQ/floe/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/ManageIQ/floe/compare/v0.20.1...HEAD
+[0.20.1]: https://github.com/ManageIQ/floe/compare/v0.20.0...v0.20.1
 [0.20.0]: https://github.com/ManageIQ/floe/compare/v0.19.2...v0.20.0
 [0.19.2]: https://github.com/ManageIQ/floe/compare/v0.19.1...v0.19.2
 [0.19.1]: https://github.com/ManageIQ/floe/compare/v0.19.0...v0.19.1
