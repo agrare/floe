@@ -26,11 +26,13 @@ module Floe
               :persistentVolumeClaim => {:claimName => vol[:volume_name]}
             }
 
-            primary[:volumeMounts] << {
+            volume_mount = {
               :name      => vol_name,
-              :mountPath => vol[:container_path],
-              :readOnly  => vol.fetch(:read_only, false)
-            }.tap { |m| m.delete(:readOnly) unless m[:readOnly] }
+              :mountPath => vol[:container_path]
+            }
+            volume_mount[:readOnly] = true if vol[:read_only]
+
+            primary[:volumeMounts] << volume_mount
           end
         end
       end
