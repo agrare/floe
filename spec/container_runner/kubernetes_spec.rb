@@ -553,7 +553,7 @@ RSpec.describe Floe::ContainerRunner::Kubernetes do
           :volumes        => [hash_including(:emptyDir => {})],
           :initContainers => [
             hash_including(
-              :name         => "floe-sidecar-init",
+              :name         => "floe-init",
               :image        => "curlimages/curl:latest",
               :volumeMounts => [hash_including(:mountPath => "/runner")]
             )
@@ -569,26 +569,11 @@ RSpec.describe Floe::ContainerRunner::Kubernetes do
                          :volumes => [{:host_path => source_dir, :container_path => "/runner"}])
     end
 
-    it "sets log_container to the primary container name even without an upload sidecar" do
+    it "sets log_container to the primary container name" do
       expect(kubeclient).to receive(:create_pod)
 
       result = subject.run_async!("docker://hello-world:latest", {}, {}, context,
                                   :volumes => [{:host_path => source_dir, :container_path => "/runner"}])
-      expect(result["log_container"]).to eq("floe-hello-world")
-    end
-
-    it "sets log_container in runner_context when a sidecar is added for output upload" do
-      allow(presigner).to receive(:presigned_url).with(:get_object, anything).and_return("https://minio.example.com/get")
-      allow(presigner).to receive(:presigned_url).with(:put_object, anything).and_return("https://minio.example.com/put")
-      expect(kubeclient).to receive(:create_pod)
-
-      result = subject.run_async!("docker://hello-world:latest", {}, {}, context,
-                                  :volumes => [{
-                                    :host_path       => source_dir,
-                                    :container_path  => "/runner",
-                                    :completion_path => "/runner/artifacts/rc",
-                                    :output_path     => "/runner/artifacts"
-                                  }])
       expect(result["log_container"]).to eq("floe-hello-world")
     end
 
@@ -600,33 +585,14 @@ RSpec.describe Floe::ContainerRunner::Kubernetes do
       expect(result["s3_object_keys"]).to include(a_string_matching(%r{^floe/#{execution_id}/runner\.tar\.gz$}))
     end
 
-    it "uses a custom sidecar image when configured" do
-      runner = described_class.new(s3_runner_options.merge("sidecar_image" => "busybox:latest"))
+    it "uses a custom init image when configured" do
+      runner = described_class.new(s3_runner_options.merge("init_image" => "busybox:latest"))
       expect(kubeclient).to receive(:create_pod).with(
-        hash_including(:spec => hash_including(:initContainers => include(hash_including(:name => "floe-sidecar-init", :image => "busybox:latest"))))
+        hash_including(:spec => hash_including(:initContainers => include(hash_including(:name => "floe-init", :image => "busybox:latest"))))
       )
 
       runner.run_async!("docker://hello-world:latest", {}, {}, context,
                         :volumes => [{:host_path => source_dir, :container_path => "/runner"}])
-    end
-
-    it "adds an output upload sidecar when completion_path and output_path are given" do
-      allow(presigner).to receive(:presigned_url).with(:get_object, anything).and_return("https://minio.example.com/get")
-      allow(presigner).to receive(:presigned_url).with(:put_object, anything).and_return("https://minio.example.com/put")
-
-      expect(kubeclient).to receive(:create_pod) do |spec|
-        sidecar_cmd = spec.dig(:spec, :containers).find { |c| c[:name] == "floe-sidecar" }&.dig(:command, 2)
-        expect(sidecar_cmd).to include("until [ -f '/runner/artifacts/rc' ]")
-        expect(sidecar_cmd).to include("https://minio.example.com/put")
-      end
-
-      subject.run_async!("docker://hello-world:latest", {}, {}, context,
-                         :volumes => [{
-                           :host_path       => source_dir,
-                           :container_path  => "/runner",
-                           :completion_path => "/runner/artifacts/rc",
-                           :output_path     => "/runner/artifacts"
-                         }])
     end
   end
 

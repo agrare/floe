@@ -82,14 +82,14 @@ runner =
     s3_bucket     = ENV.fetch("S3_BUCKET",     "floe-inputs")
     s3_access_key = ENV.fetch("S3_ACCESS_KEY", "minioadmin")
     s3_secret_key = ENV.fetch("S3_SECRET_KEY", "minioadmin")
-    sidecar_image = ENV.fetch("SIDECAR_IMAGE", "curlimages/curl:latest")
+    init_image    = ENV.fetch("INIT_IMAGE",    "curlimages/curl:latest")
 
     options = {
       "s3_endpoint"   => s3_endpoint,
       "s3_bucket"     => s3_bucket,
       "s3_access_key" => s3_access_key,
       "s3_secret_key" => s3_secret_key,
-      "sidecar_image" => sidecar_image
+      "init_image"    => init_image
     }
     options["server"] = kube_server if kube_token
     options["token"]  = kube_token  if kube_token
