@@ -124,27 +124,24 @@ module Floe
           require "rubygems/package"
           require "zlib"
 
-          # TarWriter requires a seekable IO (pos=), so build the tar into a
-          # plain StringIO first, then gzip the result.
-          tar_buffer = StringIO.new
-          Gem::Package::TarWriter.new(tar_buffer) do |tar|
-            Dir.glob("#{source_path}/**/*", File::FNM_DOTMATCH).sort.each do |file|
-              relative = file.sub("#{source_path}/", "")
-              next if relative == "." || relative.empty?
+          gz_buffer = StringIO.new
+          Zlib::GzipWriter.wrap(gz_buffer) do |gz|
+            Gem::Package::TarWriter.new(gz) do |tar|
+              Dir.glob("#{source_path}/**/*", File::FNM_DOTMATCH).sort.each do |file|
+                relative = file.sub("#{source_path}/", "")
+                next if relative == "." || relative.empty?
 
-              stat = File.stat(file)
-              if stat.directory?
-                tar.mkdir(relative, stat.mode)
-              else
-                tar.add_file(relative, stat.mode) do |io|
-                  File.open(file, "rb") { |f| IO.copy_stream(f, io) }
+                stat = File.stat(file)
+                if stat.directory?
+                  tar.mkdir(relative, stat.mode)
+                else
+                  tar.add_file_simple(relative, stat.mode, stat.size) do |io|
+                    File.open(file, "rb") { |f| IO.copy_stream(f, io) }
+                  end
                 end
               end
             end
           end
-
-          gz_buffer = StringIO.new
-          Zlib::GzipWriter.wrap(gz_buffer) { |gz| gz.write(tar_buffer.string) }
           gz_buffer.string
         end
 
