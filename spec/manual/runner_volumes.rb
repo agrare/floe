@@ -49,6 +49,7 @@
 $LOAD_PATH.unshift(File.expand_path("../../lib", __dir__))
 
 require "pathname"
+require "securerandom"
 require "tmpdir"
 require "floe"
 require "floe/container_runner"
@@ -106,7 +107,7 @@ begin
   source_dir.join("input.txt").write("hello from host\n")
   puts "Source dir: #{source_dir}"
 
-  context = Floe::Workflow::Context.new({"Execution" => {"Id" => "manual-test-#{runner_name}-volumes"}})
+  context = Floe::Workflow::Context.new({"Execution" => {"Id" => "manual-#{runner_name}-#{SecureRandom.uuid}"}})
 
   puts "Calling run_async!..."
   rc = runner.run_async!(
