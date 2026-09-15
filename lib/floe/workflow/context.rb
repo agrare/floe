@@ -8,7 +8,7 @@ module Floe
       include Logging
 
       # @param context [Json|Hash] (default, create another with input and execution params)
-      # @param input [Hash] (default: {})
+      # @param input [Json] (default: '{}')
       def initialize(context = nil, input: nil, credentials: nil, logger: nil)
         context = JSON.parse(context) if context.kind_of?(String)
 
