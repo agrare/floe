@@ -50,7 +50,7 @@ module Floe
 
         # Mutates spec in-place to add the emptyDir shared volumes and init
         # container for staged volumes.
-        def add_host_path_volumes_to_spec!(spec, name, staged_volumes)
+        def add_host_path_volumes_to_spec!(spec, staged_volumes)
           spec[:spec][:volumes] ||= []
           primary = spec[:spec][:containers][0]
           primary[:volumeMounts] ||= []

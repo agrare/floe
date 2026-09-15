@@ -236,7 +236,7 @@ module Floe
           ]
         end
 
-        add_host_path_volumes_to_spec!(spec, name, staged_volumes) if staged_volumes.any?
+        add_host_path_volumes_to_spec!(spec, staged_volumes) if staged_volumes.any?
         add_persistent_volumes_to_spec!(spec, persistent_volumes) if persistent_volumes.any?
 
         spec
