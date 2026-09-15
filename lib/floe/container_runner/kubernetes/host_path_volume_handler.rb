@@ -17,6 +17,12 @@ module Floe
           @init_image    = options.fetch("init_image", DEFAULT_INIT_IMAGE)
         end
 
+        # Deletes every S3 object recorded in runner_context under
+        # "s3_object_keys", suppressing errors for each deletion.
+        def cleanup_staged_volumes(runner_context)
+          Array(runner_context["s3_object_keys"]).each { |key| delete_s3_object(key) }
+        end
+
         private
 
         attr_reader :s3_endpoint, :s3_bucket, :s3_access_key, :s3_secret_key, :init_image
@@ -26,9 +32,12 @@ module Floe
         end
 
         # Upload each volume's host_path as a .tar.gz to S3, returning an array
-        # of hashes with :volume, :s3_key, :presigned_input_url.
-        def stage_host_path_volumes(volumes, execution_id, logger)
+        # of hashes with :volume, :s3_key, :presigned_input_url. Also records the
+        # uploaded S3 keys in runner_context["s3_object_keys"] for later cleanup.
+        def stage_host_path_volumes(volumes, execution_id, logger, runner_context)
           raise ArgumentError, "S3 must be configured (s3_endpoint, s3_bucket, s3_access_key, s3_secret_key) to use volumes with Kubernetes" unless s3_configured?
+
+          runner_context["s3_object_keys"] = []
 
           volumes.map do |volume|
             s3_key = "floe/#{execution_id}/#{File.basename(volume[:container_path])}.tar.gz"
@@ -37,6 +46,8 @@ module Floe
             tarball = create_tarball(volume[:host_path])
             upload_to_s3(s3_key, tarball)
             presigned_url = presign_s3_get(s3_key)
+
+            runner_context["s3_object_keys"] << s3_key
 
             {:volume => volume, :s3_key => s3_key, :presigned_input_url => presigned_url}
           end

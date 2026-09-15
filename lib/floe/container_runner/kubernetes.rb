@@ -63,8 +63,7 @@ module Floe
         runner_context = {"container_ref" => name, "container_state" => {"phase" => "Pending"}, "secrets_ref" => secret}
 
         persistent_volumes, host_volumes = volumes.partition { |v| v[:volume_name] }
-        staged_volumes = stage_host_path_volumes(host_volumes, execution_id, context.logger) if host_volumes.any?
-        runner_context["s3_object_keys"] = staged_volumes.map { |sv| sv[:s3_key] } if staged_volumes
+        staged_volumes = stage_host_path_volumes(host_volumes, execution_id, context.logger, runner_context) if host_volumes.any?
 
         begin
           spec = pod_spec(name, image, env, execution_id, secret, staged_volumes || [], persistent_volumes || [])
@@ -121,7 +120,7 @@ module Floe
         delete_pod(pod)       if pod
         delete_secret(secret) if secret
 
-        Array(runner_context["s3_object_keys"]).each { |key| delete_s3_object(key) }
+        cleanup_staged_volumes(runner_context)
       end
 
       def wait(timeout: nil, events: %i[create update delete])
