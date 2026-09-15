@@ -38,10 +38,11 @@ module Floe
 
           volumes.map do |volume|
             s3_key = "floe/#{execution_id}/#{File.basename(volume[:container_path])}.tar.gz"
-            logger.debug("Staging volume #{volume[:host_path]} -> s3://#{s3_bucket}/#{s3_key}")
+            logger.debug("Staging volume #{volume[:host_path]} -> s3://#{s3_bucket}/#{s3_key}...")
 
             tarball = create_tarball(volume[:host_path])
             upload_to_s3(s3_key, tarball)
+            logger.debug("Staging volume #{volume[:host_path]} -> s3://#{s3_bucket}/#{s3_key}...Complete")
             presigned_url = presign_s3_get(s3_key)
 
             {:volume => volume, :s3_key => s3_key, :presigned_input_url => presigned_url}
