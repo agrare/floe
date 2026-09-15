@@ -8,15 +8,14 @@ module Floe
       include Logging
 
       # @param context [Json|Hash] (default, create another with input and execution params)
-      # @param input [Hash] (default: {})
+      # @param input [Json] (default: '{}')
       def initialize(context = nil, input: nil, credentials: nil, logger: nil)
         context = JSON.parse(context) if context.kind_of?(String)
-        input   = JSON.parse(input || "{}")
 
         @context = context || {}
         self["Credentials"]        ||= credentials || {}
         self["Execution"]          ||= {}
-        self["Execution"]["Input"] ||= input
+        self["Execution"]["Input"] ||= JSON.parse(input || "{}")
         self["State"]              ||= {}
         self["StateHistory"]       ||= []
         self["StateMachine"]       ||= {}
@@ -158,6 +157,23 @@ module Floe
 
       def dig(*args)
         @context.dig(*args)
+      end
+
+      def child_context(input)
+        require "active_support/core_ext/object/deep_dup"
+
+        # Copy the Execution context minus any keys which are set at runtime.
+        # This allows any user defined state-machine execution values be used
+        # by child workflows.
+        #
+        # The deep_dup is important here, otherwise the Execution hash object is
+        # shared between all child workflows.
+        child_execution = execution
+          .except("Input", "StartTime", "EndTime")
+          .deep_dup
+          .merge("Input" => input)
+
+        self.class.new({"Execution" => child_execution})
       end
 
       def inspect

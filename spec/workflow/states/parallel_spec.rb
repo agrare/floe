@@ -172,6 +172,46 @@ RSpec.describe Floe::Workflow::States::Parallel do
       expect(ctx.state.dig("BranchContext", 0, "Execution", "Input")).to eq(ctx.dig("State", "Input"))
       expect(ctx.state.dig("BranchContext", 1, "Execution", "Input")).to eq(ctx.dig("State", "Input"))
     end
+
+    context "with Execution context containing StartTime, EndTime, and other keys" do
+      # Force `state` to be evaluated (triggering start_workflow / prepare_start)
+      # before adding extra keys to execution, so that prepare_start does not
+      # return early due to StartTime already being present.
+      before do
+        state # evaluate lazy let
+        ctx.execution["EndTime"] = "2024-01-01T01:00:00Z"
+        ctx.execution["RoleArn"] = "arn:aws:iam::123456789012:role/MyRole"
+      end
+
+      it "does not copy StartTime into the branch execution context" do
+        state.start(ctx)
+
+        expect(ctx.state.dig("BranchContext", 0, "Execution")).not_to have_key("StartTime")
+        expect(ctx.state.dig("BranchContext", 1, "Execution")).not_to have_key("StartTime")
+      end
+
+      it "does not copy EndTime into the branch execution context" do
+        state.start(ctx)
+
+        expect(ctx.state.dig("BranchContext", 0, "Execution")).not_to have_key("EndTime")
+        expect(ctx.state.dig("BranchContext", 1, "Execution")).not_to have_key("EndTime")
+      end
+
+      it "does not copy the parent Execution Input into the branch execution context" do
+        ctx.execution["Input"] = {"original" => "workflow-input"}
+        state.start(ctx)
+
+        expect(ctx.state.dig("BranchContext", 0, "Execution", "Input")).not_to eq({"original" => "workflow-input"})
+        expect(ctx.state.dig("BranchContext", 1, "Execution", "Input")).not_to eq({"original" => "workflow-input"})
+      end
+
+      it "copies other execution keys into the branch execution context" do
+        state.start(ctx)
+
+        expect(ctx.state.dig("BranchContext", 0, "Execution", "RoleArn")).to eq("arn:aws:iam::123456789012:role/MyRole")
+        expect(ctx.state.dig("BranchContext", 1, "Execution", "RoleArn")).to eq("arn:aws:iam::123456789012:role/MyRole")
+      end
+    end
   end
 
   describe "#finish" do
