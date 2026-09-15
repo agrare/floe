@@ -596,8 +596,8 @@ RSpec.describe Floe::ContainerRunner::Kubernetes do
     end
   end
 
-  describe "#run_async! with pre-made volumes" do
-    it "does not require S3 when only pre-made volumes are given" do
+  describe "#run_async! with persistent volumes" do
+    it "does not require S3 when only persistent volumes are given" do
       runner = described_class.new(runner_options)
       expect(kubeclient).to receive(:create_pod)
 
@@ -610,8 +610,8 @@ RSpec.describe Floe::ContainerRunner::Kubernetes do
         vols   = spec.dig(:spec, :volumes)
         mounts = spec.dig(:spec, :containers, 0, :volumeMounts)
 
-        expect(vols).to include(hash_including(:name => "floe-pre-made-volume-0", :persistentVolumeClaim => {:claimName => "my-pvc"}))
-        expect(mounts).to include(hash_including(:name => "floe-pre-made-volume-0", :mountPath => "/data"))
+        expect(vols).to include(hash_including(:name => "floe-persistent-volume-0", :persistentVolumeClaim => {:claimName => "my-pvc"}))
+        expect(mounts).to include(hash_including(:name => "floe-persistent-volume-0", :mountPath => "/data"))
       end
 
       subject.run_async!("docker://hello-world:latest", {}, {}, context,
@@ -638,15 +638,15 @@ RSpec.describe Floe::ContainerRunner::Kubernetes do
                          :volumes => [{:volume_name => "my-pvc", :container_path => "/data", :read_only => true}])
     end
 
-    it "supports multiple pre-made volumes" do
+    it "supports multiple persistent volumes" do
       expect(kubeclient).to receive(:create_pod) do |spec|
         vols   = spec.dig(:spec, :volumes)
         mounts = spec.dig(:spec, :containers, 0, :volumeMounts)
 
         expect(vols.size).to eq(2)
         expect(mounts.size).to eq(2)
-        expect(vols[0]).to include(:name => "floe-pre-made-volume-0", :persistentVolumeClaim => {:claimName => "pvc-a"})
-        expect(vols[1]).to include(:name => "floe-pre-made-volume-1", :persistentVolumeClaim => {:claimName => "pvc-b"})
+        expect(vols[0]).to include(:name => "floe-persistent-volume-0", :persistentVolumeClaim => {:claimName => "pvc-a"})
+        expect(vols[1]).to include(:name => "floe-persistent-volume-1", :persistentVolumeClaim => {:claimName => "pvc-b"})
       end
 
       subject.run_async!("docker://hello-world:latest", {}, {}, context,
@@ -656,7 +656,7 @@ RSpec.describe Floe::ContainerRunner::Kubernetes do
                          ])
     end
 
-    it "mixes pre-made and staged volumes together" do
+    it "mixes persistent and staged volumes together" do
       let_s3_runner = described_class.new(runner_options.merge(
                                             "s3_endpoint"   => "https://minio.example.com",
                                             "s3_bucket"     => "floe-inputs",
@@ -679,7 +679,7 @@ RSpec.describe Floe::ContainerRunner::Kubernetes do
 
         expect(kubeclient).to receive(:create_pod) do |spec|
           vols = spec.dig(:spec, :volumes)
-          # emptyDir from staged + PVC from pre-made
+          # emptyDir from staged + PVC from persistent
           expect(vols).to include(hash_including(:emptyDir => {}))
           expect(vols).to include(hash_including(:persistentVolumeClaim => {:claimName => "my-pvc"}))
         end

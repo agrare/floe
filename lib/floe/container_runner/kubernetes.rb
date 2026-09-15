@@ -8,8 +8,8 @@ module Floe
       require_relative "kubernetes/host_path_volume_handler"
       include Floe::ContainerRunner::Kubernetes::HostPathVolumeHandler
 
-      require_relative "kubernetes/pre_made_volume_handler"
-      include Floe::ContainerRunner::Kubernetes::PreMadeVolumeHandler
+      require_relative "kubernetes/persistent_volume_handler"
+      include Floe::ContainerRunner::Kubernetes::PersistentVolumeHandler
 
       TOKEN_FILE      = "/run/secrets/kubernetes.io/serviceaccount/token"
       CA_CERT_FILE    = "/run/secrets/kubernetes.io/serviceaccount/ca.crt"
@@ -62,12 +62,12 @@ module Floe
         execution_id   = context.execution["Id"]
         runner_context = {"container_ref" => name, "container_state" => {"phase" => "Pending"}, "secrets_ref" => secret}
 
-        pre_made_volumes, host_volumes = volumes.partition { |v| v[:volume_name] }
+        persistent_volumes, host_volumes = volumes.partition { |v| v[:volume_name] }
         staged_volumes = stage_host_path_volumes(host_volumes, execution_id, context.logger) if host_volumes.any?
         runner_context["s3_object_keys"] = staged_volumes.map { |sv| sv[:s3_key] } if staged_volumes
 
         begin
-          spec = pod_spec(name, image, env, execution_id, secret, staged_volumes || [], pre_made_volumes || [])
+          spec = pod_spec(name, image, env, execution_id, secret, staged_volumes || [], persistent_volumes || [])
           kubeclient.create_pod(spec)
           # Always record the primary container name so get_pod_log targets the
           # right container even when init containers are present.
@@ -190,7 +190,7 @@ module Floe
       # Pod spec construction
       # ------------------------------------------------------------------
 
-      def pod_spec(name, image, env, execution_id, secret = nil, staged_volumes = [], pre_made_volumes = [])
+      def pod_spec(name, image, env, execution_id, secret = nil, staged_volumes = [], persistent_volumes = [])
         spec = {
           :kind       => "Pod",
           :apiVersion => "v1",
@@ -237,7 +237,7 @@ module Floe
         end
 
         add_host_path_volumes_to_spec!(spec, name, staged_volumes) if staged_volumes.any?
-        add_pre_made_volumes_to_spec!(spec, pre_made_volumes)   if pre_made_volumes.any?
+        add_persistent_volumes_to_spec!(spec, persistent_volumes) if persistent_volumes.any?
 
         spec
       end
