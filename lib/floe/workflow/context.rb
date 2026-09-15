@@ -159,6 +159,23 @@ module Floe
         @context.dig(*args)
       end
 
+      def child_context(input)
+        require "active_support/core_ext/object/deep_dup"
+
+        # Copy the Execution context minus any keys which are set at runtime.
+        # This allows any user defined state-machine execution values be used
+        # by child workflows.
+        #
+        # The deep_dup is important here, otherwise the Execution hash object is
+        # shared between all child workflows.
+        child_execution = execution
+          .except("Input", "StartTime", "EndTime")
+          .deep_dup
+          .merge("Input" => input)
+
+        self.class.new({"Execution" => child_execution})
+      end
+
       def inspect
         "#<#{self.class.name}: #{safe_context.inspect}>"
       end

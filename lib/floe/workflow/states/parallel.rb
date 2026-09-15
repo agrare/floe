@@ -32,19 +32,12 @@ module Floe
         end
 
         def start(context)
-          require "active_support/core_ext/object/deep_dup"
-
           super
 
           input = process_input(context)
 
-          # Copy the Execution context minus any keys which are set at runtime.
-          # This allows any user defined state-machine execution values be used by the parallel branches
-          branch_context_execution          = context.execution.except("Input", "StartTime", "EndTime")
-          branch_context_execution["Input"] = input
-
           context.state["BranchContext"] = branches.map do |_branch|
-            Context.new({"Execution" => branch_context_execution}.deep_dup).to_h
+            context.child_context(input).to_h
           end
         end
 
