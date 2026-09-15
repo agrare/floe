@@ -20,7 +20,12 @@ module Floe
         # Deletes every S3 object represented by staged_volumes, suppressing
         # errors for each deletion.
         def cleanup_staged_volumes(staged_volumes)
-          Array(staged_volumes).each { |volume| delete_s3_object(volume[:s3_key] || volume["s3_key"]) }
+          Array(staged_volumes).each do |volume|
+            key = volume[:s3_key] || volume["s3_key"]
+            Floe.logger.debug("Deleting s3://#{s3_bucket}/#{key}...")
+            delete_s3_object(key)
+            Floe.logger.debug("Deleting s3://#{s3_bucket}/#{key}...Complete")
+          end
         end
 
         private

@@ -48,12 +48,15 @@
 
 $LOAD_PATH.unshift(File.expand_path("../../lib", __dir__))
 
+require "logger"
 require "pathname"
 require "securerandom"
 require "tmpdir"
 require "floe"
 require "floe/container_runner"
 require "floe/workflow/context"
+
+Floe.logger = Logger.new($stdout, :level => Logger::DEBUG)
 
 # --runner is required
 runner_name =

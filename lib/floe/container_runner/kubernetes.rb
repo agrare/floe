@@ -68,6 +68,7 @@ module Floe
 
         begin
           spec = pod_spec(name, image, env, execution_id, secret, staged_volumes || [], persistent_volumes || [])
+          context.logger.debug("Running pod #{name} with image #{image}")
           kubeclient.create_pod(spec)
           # Always record the primary container name so get_pod_log targets the
           # right container even when init containers are present.
