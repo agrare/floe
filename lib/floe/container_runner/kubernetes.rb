@@ -63,7 +63,8 @@ module Floe
         runner_context = {"container_ref" => name, "container_state" => {"phase" => "Pending"}, "secrets_ref" => secret}
 
         persistent_volumes, host_volumes = volumes.partition { |v| v[:volume_name] }
-        staged_volumes = stage_host_path_volumes(host_volumes, execution_id, context.logger, runner_context) if host_volumes.any?
+        staged_volumes = stage_host_path_volumes(host_volumes, execution_id, context.logger) if host_volumes.any?
+        runner_context["staged_volumes"] = staged_volumes if staged_volumes
 
         begin
           spec = pod_spec(name, image, env, execution_id, secret, staged_volumes || [], persistent_volumes || [])
@@ -120,7 +121,7 @@ module Floe
         delete_pod(pod)       if pod
         delete_secret(secret) if secret
 
-        cleanup_staged_volumes(runner_context)
+        cleanup_staged_volumes(runner_context["staged_volumes"])
       end
 
       def wait(timeout: nil, events: %i[create update delete])

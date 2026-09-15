@@ -577,12 +577,12 @@ RSpec.describe Floe::ContainerRunner::Kubernetes do
       expect(result["log_container"]).to eq("floe-hello-world")
     end
 
-    it "stores s3_object_keys in runner_context for cleanup" do
+    it "stores staged_volumes in runner_context for cleanup" do
       expect(kubeclient).to receive(:create_pod)
 
       result = subject.run_async!("docker://hello-world:latest", {}, {}, context,
                                   :volumes => [{:host_path => source_dir, :container_path => "/runner"}])
-      expect(result["s3_object_keys"]).to include(a_string_matching(%r{^floe/#{execution_id}/runner\.tar\.gz$}))
+      expect(result["staged_volumes"]).to include(hash_including(:s3_key => a_string_matching(%r{^floe/#{execution_id}/runner\.tar\.gz$})))
     end
 
     it "uses a custom init image when configured" do
@@ -695,7 +695,7 @@ RSpec.describe Floe::ContainerRunner::Kubernetes do
     end
   end
 
-  describe "#cleanup with s3_object_keys" do
+  describe "#cleanup with staged_volumes" do
     let(:s3_runner_options) do
       runner_options.merge(
         "s3_endpoint"   => "https://minio.example.com",
@@ -712,14 +712,14 @@ RSpec.describe Floe::ContainerRunner::Kubernetes do
       allow(Aws::S3::Client).to receive(:new).and_return(s3_client)
     end
 
-    it "deletes S3 objects stored in runner_context" do
+    it "deletes S3 objects for staged volumes stored in runner_context" do
       expect(kubeclient).to receive(:delete_pod).with("my-pod", "default")
       expect(s3_client).to receive(:delete_object).with(:bucket => "floe-inputs", :key => "floe/job/runner.tar.gz")
 
-      subject.cleanup({"container_ref" => "my-pod", "s3_object_keys" => ["floe/job/runner.tar.gz"]})
+      subject.cleanup({"container_ref" => "my-pod", "staged_volumes" => [{"s3_key" => "floe/job/runner.tar.gz"}]})
     end
 
-    it "does not call delete_object when no s3_object_keys" do
+    it "does not call delete_object when there are no staged volumes" do
       expect(kubeclient).to receive(:delete_pod).with("my-pod", "default")
       expect(s3_client).not_to receive(:delete_object)
 
