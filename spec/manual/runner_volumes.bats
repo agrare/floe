@@ -11,27 +11,19 @@
 #   --runner kubernetes --use-persistent-volume
 #
 # Prerequisites:
-#   - TEST_IMAGE must be set (see spec/manual/build_test_images.sh)
 #   - Docker / Podman must be running locally for those runners
 #   - Kubernetes tests require a reachable cluster; they are skipped when
 #     `kubectl cluster-info` fails
 #   - The host-path Kubernetes test also requires MinIO (S3_ENDPOINT etc.)
 #
 # Usage:
-#   TEST_IMAGE=docker.io/myuser/floe-test-cat-file:latest \
-#     bats spec/manual/runner_volumes.bats
+#   bats spec/manual/runner_volumes.bats
 
 SCRIPT="$(dirname "$BATS_TEST_FILENAME")/runner_volumes.rb"
 
 #
 # Helpers
 #
-
-require_test_image() {
-  if [[ -z "${TEST_IMAGE:-}" ]]; then
-    skip "TEST_IMAGE is not set — build and push the test image first via spec/manual/build_test_images.sh"
-  fi
-}
 
 require_docker() {
   if ! docker info &>/dev/null; then
@@ -62,7 +54,6 @@ assert_pass() {
 #
 
 @test "docker: host-path volume" {
-  require_test_image
   require_docker
   run ruby "$SCRIPT" --runner docker
   echo "$output"
@@ -71,7 +62,6 @@ assert_pass() {
 }
 
 @test "docker: persistent volume" {
-  require_test_image
   require_docker
   run ruby "$SCRIPT" --runner docker --use-persistent-volume
   echo "$output"
@@ -80,7 +70,6 @@ assert_pass() {
 }
 
 @test "podman: host-path volume" {
-  require_test_image
   require_podman
   run ruby "$SCRIPT" --runner podman
   echo "$output"
@@ -89,7 +78,6 @@ assert_pass() {
 }
 
 @test "podman: persistent volume" {
-  require_test_image
   require_podman
   run ruby "$SCRIPT" --runner podman --use-persistent-volume
   echo "$output"
@@ -98,7 +86,6 @@ assert_pass() {
 }
 
 @test "kubernetes: host-path volume" {
-  require_test_image
   require_kubernetes
   run ruby "$SCRIPT" --runner kubernetes
   echo "$output"
@@ -107,7 +94,6 @@ assert_pass() {
 }
 
 @test "kubernetes: persistent volume" {
-  require_test_image
   require_kubernetes
   run ruby "$SCRIPT" --runner kubernetes --use-persistent-volume
   echo "$output"

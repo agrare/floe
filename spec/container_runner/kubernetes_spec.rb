@@ -81,6 +81,51 @@ RSpec.describe Floe::ContainerRunner::Kubernetes do
       subject.run_async!("docker://hello-world:latest", {}, {}, context)
     end
 
+    it "passes a command as container args" do
+      command = ["echo", "hello"]
+      expected_pod_spec = hash_including(
+        :spec => hash_including(
+          :containers => [hash_including(:args => command)]
+        )
+      )
+      stub_kubernetes_run(:spec => expected_pod_spec, :status => false, :cleanup => false)
+
+      subject.run_async!("docker://hello-world:latest", {}, {}, context, :command => command)
+    end
+
+    it "passes an entrypoint as container command" do
+      expected_pod_spec = hash_including(
+        :spec => hash_including(
+          :containers => [hash_including(:command => ["/bin/sh"])]
+        )
+      )
+      stub_kubernetes_run(:spec => expected_pod_spec, :status => false, :cleanup => false)
+
+      subject.run_async!("docker://hello-world:latest", {}, {}, context, :entrypoint => "/bin/sh")
+    end
+
+    it "passes both entrypoint and command to the container spec" do
+      command = ["-c", "echo hello"]
+      expected_pod_spec = hash_including(
+        :spec => hash_including(
+          :containers => [hash_including(:command => ["/bin/sh"], :args => command)]
+        )
+      )
+      stub_kubernetes_run(:spec => expected_pod_spec, :status => false, :cleanup => false)
+
+      subject.run_async!("docker://hello-world:latest", {}, {}, context, :entrypoint => "/bin/sh", :command => command)
+    end
+
+    it "raises ArgumentError when command is not an Array" do
+      expect { subject.run_async!("docker://hello-world:latest", {}, {}, context, :command => "echo hello") }
+        .to raise_error(ArgumentError, "command must be an Array")
+    end
+
+    it "raises ArgumentError when entrypoint is not a String" do
+      expect { subject.run_async!("docker://hello-world:latest", {}, {}, context, :entrypoint => 42) }
+        .to raise_error(ArgumentError, "entrypoint must be a String")
+    end
+
     it "sets the pod name in runner_context" do
       expected_pod_spec = hash_including(
         :kind       => "Pod",
@@ -558,7 +603,7 @@ RSpec.describe Floe::ContainerRunner::Kubernetes do
               :volumeMounts => [hash_including(:mountPath => "/runner")]
             )
           ],
-          :containers => [
+          :containers     => [
             hash_including(:name => "floe-hello-world", :volumeMounts => [hash_including(:mountPath => "/runner")])
           ]
         )

@@ -22,6 +22,36 @@ RSpec.describe Floe::ContainerRunner::Docker do
       subject.run_async!("docker://hello-world:latest", {}, {}, context)
     end
 
+    it "passes a command to docker run" do
+      command = ["echo", "hello"]
+      stub_good_run!("docker", :params => ["run", :detach, [:label, "execution_id=#{execution_id}"], [:name, a_string_starting_with("floe-hello-world-")], "hello-world:latest", *command], :output => "#{container_id}\n")
+
+      subject.run_async!("docker://hello-world:latest", {}, {}, context, :command => command)
+    end
+
+    it "passes an entrypoint to docker run" do
+      stub_good_run!("docker", :params => ["run", :detach, [:label, "execution_id=#{execution_id}"], [:entrypoint, "/bin/sh"], [:name, a_string_starting_with("floe-hello-world-")], "hello-world:latest"], :output => "#{container_id}\n")
+
+      subject.run_async!("docker://hello-world:latest", {}, {}, context, :entrypoint => "/bin/sh")
+    end
+
+    it "passes both entrypoint and command to docker run" do
+      command = ["-c", "echo hello"]
+      stub_good_run!("docker", :params => ["run", :detach, [:label, "execution_id=#{execution_id}"], [:entrypoint, "/bin/sh"], [:name, a_string_starting_with("floe-hello-world-")], "hello-world:latest", *command], :output => "#{container_id}\n")
+
+      subject.run_async!("docker://hello-world:latest", {}, {}, context, :entrypoint => "/bin/sh", :command => command)
+    end
+
+    it "raises ArgumentError when command is not an Array" do
+      expect { subject.run_async!("docker://hello-world:latest", {}, {}, context, :command => "echo hello") }
+        .to raise_error(ArgumentError, "command must be an Array")
+    end
+
+    it "raises ArgumentError when entrypoint is not a String" do
+      expect { subject.run_async!("docker://hello-world:latest", {}, {}, context, :entrypoint => 42) }
+        .to raise_error(ArgumentError, "entrypoint must be a String")
+    end
+
     it "passes environment variables to docker run" do
       stub_good_run!("docker", :params => ["run", :detach, [:e, "FOO=BAR"], [:label, "execution_id=#{execution_id}"], [:name, a_string_starting_with("floe-hello-world-")], "hello-world:latest"], :output => "#{container_id}\n")
 

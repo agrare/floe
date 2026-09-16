@@ -30,7 +30,7 @@ module Floe
 
       private
 
-      def run_container_params(image, env, execution_id, secret, volumes = [])
+      def run_container_params(image, env, execution_id, secret, volumes, entrypoint, command)
         params  = ["run"]
         params << :detach
         params += env.map { |k, v| [:e, "#{k}=#{v}"] }
@@ -40,8 +40,11 @@ module Floe
         params << [:label, "execution_id=#{execution_id}"]
         params << [:secret, secret] if secret
         params += volumes.map { |v| [:v, volume_to_flag(v)] }
+        params << [:entrypoint, entrypoint] if entrypoint
         params << [:name, container_name(image)]
         params << image
+        params.concat(command) if command
+        params
       end
 
       def create_secret(secrets)
