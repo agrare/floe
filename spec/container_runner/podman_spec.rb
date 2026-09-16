@@ -119,6 +119,26 @@ RSpec.describe Floe::ContainerRunner::Podman do
   end
 
   context "run_async! parameters" do
+    it "passes a command to podman run" do
+      command = ["echo", "hello"]
+      stub_good_run!("podman", :params => ["run", :detach, [:label, "execution_id=#{execution_id}"], [:name, a_string_starting_with("floe-hello-world-")], "hello-world:latest", *command], :output => "#{container_id}\n")
+
+      subject.run_async!("docker://hello-world:latest", {}, {}, context, :command => command)
+    end
+
+    it "passes an entrypoint to podman run" do
+      stub_good_run!("podman", :params => ["run", :detach, [:label, "execution_id=#{execution_id}"], [:entrypoint, "/bin/sh"], [:name, a_string_starting_with("floe-hello-world-")], "hello-world:latest"], :output => "#{container_id}\n")
+
+      subject.run_async!("docker://hello-world:latest", {}, {}, context, :entrypoint => "/bin/sh")
+    end
+
+    it "passes both entrypoint and command to podman run" do
+      command = ["-c", "echo hello"]
+      stub_good_run!("podman", :params => ["run", :detach, [:label, "execution_id=#{execution_id}"], [:entrypoint, "/bin/sh"], [:name, a_string_starting_with("floe-hello-world-")], "hello-world:latest", *command], :output => "#{container_id}\n")
+
+      subject.run_async!("docker://hello-world:latest", {}, {}, context, :entrypoint => "/bin/sh", :command => command)
+    end
+
     context "with volumes" do
       it "defaults volume options to z" do
         stub_good_run!("podman", :params => ["run", :detach, [:label, "execution_id=#{execution_id}"], [:v, "/tmp/runner:/runner:z"], [:name, a_string_starting_with("floe-hello-world-")], "hello-world:latest"], :output => "#{container_id}\n")

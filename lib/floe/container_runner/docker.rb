@@ -18,8 +18,10 @@ module Floe
         @pull_policy = options["pull-policy"]
       end
 
-      def run_async!(resource, env, secrets, context, volumes: [])
+      def run_async!(resource, env, secrets, context, volumes: [], entrypoint: nil, command: nil)
         raise ArgumentError, "Invalid resource" unless resource&.start_with?("docker://")
+        raise ArgumentError, "entrypoint must be a String" if entrypoint && !entrypoint.kind_of?(String)
+        raise ArgumentError, "command must be an Array"    if command && !command.kind_of?(Array)
 
         image          = resource.sub("docker://", "")
         execution_id   = context.execution["Id"]
@@ -30,7 +32,7 @@ module Floe
         end
 
         begin
-          runner_context["container_ref"] = run_container(image, env, execution_id, runner_context["secrets_ref"], context.logger, volumes)
+          runner_context["container_ref"] = run_container(image, env, execution_id, runner_context["secrets_ref"], context.logger, volumes, entrypoint, command)
           runner_context
         rescue AwesomeSpawn::CommandResultError => err
           cleanup(runner_context)
@@ -128,8 +130,8 @@ module Floe
 
       attr_reader :network
 
-      def run_container(image, env, execution_id, secrets_file, logger, volumes = [])
-        params = run_container_params(image, env, execution_id, secrets_file, volumes)
+      def run_container(image, env, execution_id, secrets_file, logger, volumes, entrypoint, command)
+        params = run_container_params(image, env, execution_id, secrets_file, volumes, entrypoint, command)
 
         logger.debug("Running #{AwesomeSpawn.build_command_line(self.class::DOCKER_COMMAND, params)}")
 
@@ -137,7 +139,7 @@ module Floe
         result.output.chomp
       end
 
-      def run_container_params(image, env, execution_id, secrets_file, volumes = [])
+      def run_container_params(image, env, execution_id, secrets_file, volumes, entrypoint, command)
         params  = ["run"]
         params << :detach
         params += env.map { |k, v| [:e, "#{k}=#{v}"] }
@@ -147,8 +149,11 @@ module Floe
         params << [:label, "execution_id=#{execution_id}"]
         params << [:v, "#{secrets_file}:/run/secrets:z"] if secrets_file
         params += volumes.map { |v| [:v, volume_to_flag(v)] }
+        params << [:entrypoint, entrypoint] if entrypoint
         params << [:name, container_name(image)]
         params << image
+        params.concat(command) if command
+        params
       end
 
       def volume_to_flag(volume)

@@ -1,19 +1,16 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 #
-# Manual test: volumes: option for Docker, Podman, and Kubernetes runners
+# Manual test: volumes: and command: options for Docker, Podman, and Kubernetes runners
 #
 # Usage:
-#   TEST_IMAGE=docker.io/myuser/floe-test-cat-file:latest \
-#     bundle exec ruby spec/manual/runner_volumes.rb --runner docker|podman|kubernetes
+#   bundle exec ruby spec/manual/runner_volumes.rb --runner docker|podman|kubernetes
 #
 #   # Named / persistent volume variant:
-#   TEST_IMAGE=docker.io/myuser/floe-test-cat-file:latest \
-#     bundle exec ruby spec/manual/runner_volumes.rb --runner docker|podman|kubernetes \
+#   bundle exec ruby spec/manual/runner_volumes.rb --runner docker|podman|kubernetes \
 #     --use-persistent-volume
 #
 # Prerequisites:
-#   - Test image built and pushed via spec/manual/build_test_images.sh
 #   - For docker/podman: Docker or Podman running locally
 #   - For kubernetes:
 #     - A Kubernetes cluster reachable from the host (kubeconfig or KUBE_SERVER+KUBE_TOKEN)
@@ -100,11 +97,8 @@ RUNNER_NAME =
 
 USE_PERSISTENT_VOLUME = ARGV.include?("--use-persistent-volume")
 
-IMAGE_NAME = ENV.fetch("TEST_IMAGE") do
-  abort("TEST_IMAGE is required. Build and push the test image first:\n\n" \
-        "  spec/manual/build_test_images.sh\n\n" \
-        "Then re-run with TEST_IMAGE=<registry>/floe-test-cat-file:latest")
-end
+TEST_IMAGE = ENV.fetch("TEST_IMAGE", "busybox:latest")
+COMMAND    = ["cat", "/runner/input.txt"].freeze
 
 #
 # Runner construction
@@ -140,8 +134,10 @@ runner =
     abort("Unknown runner: #{RUNNER_NAME}. Use docker, podman, or kubernetes.")
   end
 
-puts "Using runner: #{RUNNER_NAME}"
-puts "Persistent-volume mode: #{USE_PERSISTENT_VOLUME}"
+puts "Using runner:             #{RUNNER_NAME}"
+puts "Persistent-volume mode:   #{USE_PERSISTENT_VOLUME}"
+puts "Image:                    #{TEST_IMAGE}"
+puts "Command:                  #{COMMAND.inspect}"
 
 #
 # Helpers: shell
@@ -299,11 +295,12 @@ begin
 
   puts "Calling run_async!..."
   rc = runner.run_async!(
-    "docker://#{IMAGE_NAME}",
+    "docker://#{TEST_IMAGE}",
     {},
     {},
     context,
-    :volumes => volumes
+    :volumes => volumes,
+    :command => COMMAND
   )
 
   loop do

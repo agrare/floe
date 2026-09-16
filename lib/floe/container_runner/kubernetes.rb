@@ -53,8 +53,10 @@ module Floe
         super
       end
 
-      def run_async!(resource, env, secrets, context, volumes: [])
+      def run_async!(resource, env, secrets, context, volumes: [], entrypoint: nil, command: nil)
         raise ArgumentError, "Invalid resource" unless resource&.start_with?("docker://")
+        raise ArgumentError, "entrypoint must be a String" if entrypoint && !entrypoint.kind_of?(String)
+        raise ArgumentError, "command must be an Array"    if command && !command.kind_of?(Array)
 
         image  = resource.sub("docker://", "")
         name   = container_name(image)
@@ -67,7 +69,7 @@ module Floe
         runner_context["staged_volumes"] = staged_volumes if staged_volumes
 
         begin
-          spec = pod_spec(name, image, env, execution_id, secret, staged_volumes || [], persistent_volumes || [])
+          spec = pod_spec(name, image, env, execution_id, secret, staged_volumes || [], persistent_volumes || [], entrypoint, command)
           context.logger.debug("Running pod #{name} with image #{image}")
           kubeclient.create_pod(spec)
           # Always record the primary container name so get_pod_log targets the
@@ -191,7 +193,7 @@ module Floe
       # Pod spec construction
       # ------------------------------------------------------------------
 
-      def pod_spec(name, image, env, execution_id, secret = nil, staged_volumes = [], persistent_volumes = [])
+      def pod_spec(name, image, env, execution_id, secret, staged_volumes, persistent_volumes, entrypoint, command)
         spec = {
           :kind       => "Pod",
           :apiVersion => "v1",
@@ -201,13 +203,7 @@ module Floe
             :labels    => {"execution_id" => execution_id}
           },
           :spec       => {
-            :containers    => [
-              {
-                :name  => name[0...-9], # remove the random suffix and its leading hyphen
-                :image => image,
-                :env   => env.map { |k, v| {:name => k, :value => v.to_s} }
-              }
-            ],
+            :containers    => [build_container_spec(name, image, env, entrypoint, command)],
             :restartPolicy => "Never"
           }
         }
@@ -241,6 +237,17 @@ module Floe
         add_persistent_volumes_to_spec!(spec, persistent_volumes) if persistent_volumes.any?
 
         spec
+      end
+
+      def build_container_spec(name, image, env, entrypoint, command)
+        container = {
+          :name  => name[0...-9], # remove the random suffix and its leading hyphen
+          :image => image,
+          :env   => env.map { |k, v| {:name => k, :value => v.to_s} }
+        }
+        container[:command] = Array(entrypoint) if entrypoint
+        container[:args]    = command           if command
+        container
       end
 
       # ------------------------------------------------------------------
