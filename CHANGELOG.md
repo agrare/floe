@@ -4,6 +4,11 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-09-16
+### Added
+- Add volumes: option to run_async! for all container runners ([#347](https://github.com/ManageIQ/floe/pull/347))
+- Add entrypoint and command overrides to container runners ([#349](https://github.com/ManageIQ/floe/pull/349))
+
 ## [0.20.1] - 2026-09-15
 ### Fixed
 - Fix Execution Context not passed to Parallel branches ([#348](https://github.com/ManageIQ/floe/pull/348))
@@ -351,7 +356,8 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ### Added
 - Initial release
 
-[Unreleased]: https://github.com/ManageIQ/floe/compare/v0.20.1...HEAD
+[Unreleased]: https://github.com/ManageIQ/floe/compare/v0.21.0...HEAD
+[0.21.0]: https://github.com/ManageIQ/floe/compare/v0.20.1...v0.21.0
 [0.20.1]: https://github.com/ManageIQ/floe/compare/v0.20.0...v0.20.1
 [0.20.0]: https://github.com/ManageIQ/floe/compare/v0.19.2...v0.20.0
 [0.19.2]: https://github.com/ManageIQ/floe/compare/v0.19.1...v0.19.2
