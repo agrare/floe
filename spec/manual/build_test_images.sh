@@ -10,21 +10,17 @@
 #   --registry  Registry prefix (default: docker.io/<current-user>)
 #   --tag       Image tag       (default: latest)
 #
-# The script pushes the following images:
-#
-#   <registry>/floe-test-cat-file:<tag>
-#     FROM alpine — CMD ["cat", "/runner/input.txt"]
-#     Used by: container_volumes.rb, kubernetes_volumes.rb
+# The script pushes the following image: <registry>/floe-test-cat-file:<tag>
 #
 # After pushing, the script prints the fully-qualified image name.
 # Set the TEST_IMAGE env var to that value when running the manual tests:
 #
 #   TEST_IMAGE=docker.io/myuser/floe-test-cat-file:latest \
-#     bundle exec ruby spec/manual/container_volumes.rb
+#     bundle exec ruby spec/manual/runner_volumes.rb --runner docker
 #
 #   TEST_IMAGE=docker.io/myuser/floe-test-cat-file:latest \
 #     S3_ENDPOINT=http://host.containers.internal:9000 \
-#     bundle exec ruby spec/manual/kubernetes_volumes.rb
+#     bundle exec ruby spec/manual/runner_volumes.rb --runner kubernetes
 
 set -euo pipefail
 
