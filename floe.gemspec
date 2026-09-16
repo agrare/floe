@@ -32,6 +32,7 @@ Gem::Specification.new do |spec|
   spec.require_paths = ["lib"]
 
   spec.add_dependency "activesupport", ">5.2"
+  spec.add_dependency "aws-sdk-s3", "~>1.0"
   spec.add_dependency "awesome_spawn", "~>1.6"
   spec.add_dependency "faraday"
   spec.add_dependency "faraday-follow_redirects"

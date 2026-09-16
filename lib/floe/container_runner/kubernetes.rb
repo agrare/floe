@@ -5,6 +5,12 @@ module Floe
     class Kubernetes < Floe::Runner
       include Floe::ContainerRunner::DockerMixin
 
+      require_relative "kubernetes/host_path_volume_handler"
+      include Floe::ContainerRunner::Kubernetes::HostPathVolumeHandler
+
+      require_relative "kubernetes/persistent_volume_handler"
+      include Floe::ContainerRunner::Kubernetes::PersistentVolumeHandler
+
       TOKEN_FILE      = "/run/secrets/kubernetes.io/serviceaccount/token"
       CA_CERT_FILE    = "/run/secrets/kubernetes.io/serviceaccount/ca.crt"
       RUNNING_PHASES  = %w[Pending Running].freeze
@@ -42,10 +48,12 @@ module Floe
         @pull_policy          = options["pull-policy"]
         @task_service_account = options["task_service_account"]
 
+        init_host_path_volume_options(options)
+
         super
       end
 
-      def run_async!(resource, env, secrets, context)
+      def run_async!(resource, env, secrets, context, volumes: [])
         raise ArgumentError, "Invalid resource" unless resource&.start_with?("docker://")
 
         image  = resource.sub("docker://", "")
@@ -54,8 +62,17 @@ module Floe
         execution_id   = context.execution["Id"]
         runner_context = {"container_ref" => name, "container_state" => {"phase" => "Pending"}, "secrets_ref" => secret}
 
+        persistent_volumes, host_volumes = volumes.partition { |v| v[:volume_name] }
+        staged_volumes = stage_host_path_volumes(host_volumes, execution_id, context.logger) if host_volumes.any?
+        runner_context["staged_volumes"] = staged_volumes if staged_volumes
+
         begin
-          create_pod!(name, image, env, execution_id, secret)
+          spec = pod_spec(name, image, env, execution_id, secret, staged_volumes || [], persistent_volumes || [])
+          context.logger.debug("Running pod #{name} with image #{image}")
+          kubeclient.create_pod(spec)
+          # Always record the primary container name so get_pod_log targets the
+          # right container even when init containers are present.
+          runner_context["primary_container"] = spec.dig(:spec, :containers, 0, :name)
           runner_context
         rescue Kubeclient::HttpError => err
           cleanup(runner_context)
@@ -93,7 +110,9 @@ module Floe
           failed_state = failed_container_states(runner_context).first
           {"Error" => failed_state["reason"], "Cause" => failed_state["message"]}
         else
-          runner_context["output"] = kubeclient.get_pod_log(runner_context["container_ref"], namespace).body
+          log_options = {}
+          log_options[:container] = runner_context["primary_container"] if runner_context["primary_container"]
+          runner_context["output"] = kubeclient.get_pod_log(runner_context["container_ref"], namespace, **log_options).body
         end
       end
 
@@ -102,6 +121,8 @@ module Floe
 
         delete_pod(pod)       if pod
         delete_secret(secret) if secret
+
+        cleanup_staged_volumes(runner_context["staged_volumes"])
       end
 
       def wait(timeout: nil, events: %i[create update delete])
@@ -152,31 +173,25 @@ module Floe
         end
       end
 
+      def inspect
+        vars = instance_variables_to_inspect.map { |ivar| "#{ivar}=#{instance_variable_get(ivar).inspect}" }.join(", ")
+        prefix = Kernel.instance_method(:inspect).bind_call(self).split(' ', 2).first
+        "#{prefix} #{vars}>"
+      end
+
       private
 
       attr_reader :ca_file, :kubeconfig_file, :kubeconfig_context, :namespace, :server, :token, :verify_ssl
 
-      def pod_info(pod_name)
-        kubeclient.get_pod(pod_name, namespace)
-      rescue Kubeclient::HttpError => err
-        raise Floe::ExecutionError, "Failed to get status for pod #{namespace}/#{pod_name}: #{err}"
+      def instance_variables_to_inspect
+        instance_variables - %i[@kubeclient @token] - host_path_volume_instance_variables_to_hide
       end
 
-      def pod_running?(context)
-        RUNNING_PHASES.include?(context.dig("container_state", "phase"))
-      end
+      # ------------------------------------------------------------------
+      # Pod spec construction
+      # ------------------------------------------------------------------
 
-      def failed_container_states(context)
-        container_statuses = context.dig("container_state", "containerStatuses") || []
-        container_statuses.filter_map { |status| status["state"]&.values&.first }
-                          .select { |state| FAILURE_REASONS.include?(state["reason"]) }
-      end
-
-      def container_failed?(context)
-        failed_container_states(context).any?
-      end
-
-      def pod_spec(name, image, env, execution_id, secret = nil)
+      def pod_spec(name, image, env, execution_id, secret = nil, staged_volumes = [], persistent_volumes = [])
         spec = {
           :kind       => "Pod",
           :apiVersion => "v1",
@@ -222,11 +237,34 @@ module Floe
           ]
         end
 
+        add_host_path_volumes_to_spec!(spec, staged_volumes) if staged_volumes.any?
+        add_persistent_volumes_to_spec!(spec, persistent_volumes) if persistent_volumes.any?
+
         spec
       end
 
-      def create_pod!(name, image, env, execution_id, secret = nil)
-        kubeclient.create_pod(pod_spec(name, image, env, execution_id, secret))
+      # ------------------------------------------------------------------
+      # Pod / secret lifecycle
+      # ------------------------------------------------------------------
+
+      def pod_info(pod_name)
+        kubeclient.get_pod(pod_name, namespace)
+      rescue Kubeclient::HttpError => err
+        raise Floe::ExecutionError, "Failed to get status for pod #{namespace}/#{pod_name}: #{err}"
+      end
+
+      def pod_running?(context)
+        RUNNING_PHASES.include?(context.dig("container_state", "phase"))
+      end
+
+      def failed_container_states(context)
+        container_statuses = context.dig("container_state", "containerStatuses") || []
+        container_statuses.filter_map { |status| status["state"]&.values&.first }
+                          .select { |state| FAILURE_REASONS.include?(state["reason"]) }
+      end
+
+      def container_failed?(context)
+        failed_container_states(context).any?
       end
 
       def delete_pod!(name)

@@ -18,7 +18,7 @@ module Floe
         @pull_policy = options["pull-policy"]
       end
 
-      def run_async!(resource, env, secrets, context)
+      def run_async!(resource, env, secrets, context, volumes: [])
         raise ArgumentError, "Invalid resource" unless resource&.start_with?("docker://")
 
         image          = resource.sub("docker://", "")
@@ -30,7 +30,7 @@ module Floe
         end
 
         begin
-          runner_context["container_ref"] = run_container(image, env, execution_id, runner_context["secrets_ref"], context.logger)
+          runner_context["container_ref"] = run_container(image, env, execution_id, runner_context["secrets_ref"], context.logger, volumes)
           runner_context
         rescue AwesomeSpawn::CommandResultError => err
           cleanup(runner_context)
@@ -128,8 +128,8 @@ module Floe
 
       attr_reader :network
 
-      def run_container(image, env, execution_id, secrets_file, logger)
-        params = run_container_params(image, env, execution_id, secrets_file)
+      def run_container(image, env, execution_id, secrets_file, logger, volumes = [])
+        params = run_container_params(image, env, execution_id, secrets_file, volumes)
 
         logger.debug("Running #{AwesomeSpawn.build_command_line(self.class::DOCKER_COMMAND, params)}")
 
@@ -137,7 +137,7 @@ module Floe
         result.output.chomp
       end
 
-      def run_container_params(image, env, execution_id, secrets_file)
+      def run_container_params(image, env, execution_id, secrets_file, volumes = [])
         params  = ["run"]
         params << :detach
         params += env.map { |k, v| [:e, "#{k}=#{v}"] }
@@ -146,8 +146,17 @@ module Floe
         params << [:net, "host"] if @network == "host"
         params << [:label, "execution_id=#{execution_id}"]
         params << [:v, "#{secrets_file}:/run/secrets:z"] if secrets_file
+        params += volumes.map { |v| [:v, volume_to_flag(v)] }
         params << [:name, container_name(image)]
         params << image
+      end
+
+      def volume_to_flag(volume)
+        options = volume.fetch(:options, "z")
+        source  = volume[:volume_name] || volume[:host_path]
+        flag    = "#{source}:#{volume[:container_path]}"
+        flag   += ":#{options}" if options && !options.empty?
+        flag
       end
 
       def wait_params(until_timestamp)

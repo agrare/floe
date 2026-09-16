@@ -508,6 +508,255 @@ RSpec.describe Floe::ContainerRunner::Kubernetes do
     end
   end
 
+  describe "#run_async! with volumes" do
+    let(:s3_runner_options) do
+      runner_options.merge(
+        "s3_endpoint"   => "https://minio.example.com",
+        "s3_bucket"     => "floe-inputs",
+        "s3_access_key" => "access",
+        "s3_secret_key" => "secret"
+      )
+    end
+    let(:subject)    { described_class.new(s3_runner_options) }
+    let(:s3_client)  { instance_double(Aws::S3::Client) }
+    let(:presigner)  { instance_double(Aws::S3::Presigner) }
+    let(:volume)     { {:host_path => "/tmp/runner", :container_path => "/runner"} }
+    let(:source_dir) { Dir.mktmpdir }
+
+    before do
+      require "aws-sdk-s3"
+      allow(Aws::S3::Client).to receive(:new).and_return(s3_client)
+      allow(Aws::S3::Presigner).to receive(:new).and_return(presigner)
+      allow(s3_client).to receive(:put_object)
+      allow(s3_client).to receive(:delete_object)
+      allow(presigner).to receive(:presigned_url).and_return("https://minio.example.com/presigned")
+      FileUtils.touch(File.join(source_dir, "env"))
+    end
+
+    after { FileUtils.remove_entry(source_dir) }
+
+    it "raises an error when S3 is not configured" do
+      runner = described_class.new(runner_options)
+      expect do
+        runner.run_async!("docker://hello-world:latest", {}, {}, context,
+                          :volumes => [{:host_path => source_dir, :container_path => "/runner"}])
+      end.to raise_error(ArgumentError, /S3 must be configured/)
+    end
+
+    it "uploads the volume to S3 and creates a pod with an init container" do
+      expect(s3_client).to receive(:put_object).with(
+        hash_including(:bucket => "floe-inputs", :key => a_string_matching(%r{^floe/#{execution_id}/runner\.tar\.gz$}))
+      )
+
+      expected_pod_spec = hash_including(
+        :spec => hash_including(
+          :volumes        => [hash_including(:emptyDir => {})],
+          :initContainers => [
+            hash_including(
+              :name         => "floe-init",
+              :image        => "curlimages/curl:latest",
+              :volumeMounts => [hash_including(:mountPath => "/runner")]
+            )
+          ],
+          :containers => [
+            hash_including(:name => "floe-hello-world", :volumeMounts => [hash_including(:mountPath => "/runner")])
+          ]
+        )
+      )
+      expect(kubeclient).to receive(:create_pod).with(expected_pod_spec)
+
+      subject.run_async!("docker://hello-world:latest", {}, {}, context,
+                         :volumes => [{:host_path => source_dir, :container_path => "/runner"}])
+    end
+
+    it "sets primary_container to the primary container name" do
+      expect(kubeclient).to receive(:create_pod)
+
+      result = subject.run_async!("docker://hello-world:latest", {}, {}, context,
+                                  :volumes => [{:host_path => source_dir, :container_path => "/runner"}])
+      expect(result["primary_container"]).to eq("floe-hello-world")
+    end
+
+    it "stores staged_volumes in runner_context for cleanup" do
+      expect(kubeclient).to receive(:create_pod)
+
+      result = subject.run_async!("docker://hello-world:latest", {}, {}, context,
+                                  :volumes => [{:host_path => source_dir, :container_path => "/runner"}])
+      expect(result["staged_volumes"]).to include(hash_including(:s3_key => a_string_matching(%r{^floe/#{execution_id}/runner\.tar\.gz$})))
+    end
+
+    it "uses a custom init image when configured" do
+      runner = described_class.new(s3_runner_options.merge("init_image" => "busybox:latest"))
+      expect(kubeclient).to receive(:create_pod).with(
+        hash_including(:spec => hash_including(:initContainers => include(hash_including(:name => "floe-init", :image => "busybox:latest"))))
+      )
+
+      runner.run_async!("docker://hello-world:latest", {}, {}, context,
+                        :volumes => [{:host_path => source_dir, :container_path => "/runner"}])
+    end
+  end
+
+  describe "#run_async! with persistent volumes" do
+    it "does not require S3 when only persistent volumes are given" do
+      runner = described_class.new(runner_options)
+      expect(kubeclient).to receive(:create_pod)
+
+      runner.run_async!("docker://hello-world:latest", {}, {}, context,
+                        :volumes => [{:volume_name => "my-pvc", :container_path => "/data"}])
+    end
+
+    it "adds the PVC volume and volumeMount to the pod spec" do
+      expect(kubeclient).to receive(:create_pod) do |spec|
+        vols   = spec.dig(:spec, :volumes)
+        mounts = spec.dig(:spec, :containers, 0, :volumeMounts)
+
+        expect(vols).to include(hash_including(:name => "floe-persistent-volume-0", :persistentVolumeClaim => {:claimName => "my-pvc"}))
+        expect(mounts).to include(hash_including(:name => "floe-persistent-volume-0", :mountPath => "/data"))
+      end
+
+      subject.run_async!("docker://hello-world:latest", {}, {}, context,
+                         :volumes => [{:volume_name => "my-pvc", :container_path => "/data"}])
+    end
+
+    it "omits readOnly when not set" do
+      expect(kubeclient).to receive(:create_pod) do |spec|
+        mount = spec.dig(:spec, :containers, 0, :volumeMounts, 0)
+        expect(mount).not_to have_key(:readOnly)
+      end
+
+      subject.run_async!("docker://hello-world:latest", {}, {}, context,
+                         :volumes => [{:volume_name => "my-pvc", :container_path => "/data"}])
+    end
+
+    it "includes readOnly when read_only is true" do
+      expect(kubeclient).to receive(:create_pod) do |spec|
+        mount = spec.dig(:spec, :containers, 0, :volumeMounts, 0)
+        expect(mount).to include(:readOnly => true)
+      end
+
+      subject.run_async!("docker://hello-world:latest", {}, {}, context,
+                         :volumes => [{:volume_name => "my-pvc", :container_path => "/data", :read_only => true}])
+    end
+
+    it "supports multiple persistent volumes" do
+      expect(kubeclient).to receive(:create_pod) do |spec|
+        vols   = spec.dig(:spec, :volumes)
+        mounts = spec.dig(:spec, :containers, 0, :volumeMounts)
+
+        expect(vols.size).to eq(2)
+        expect(mounts.size).to eq(2)
+        expect(vols[0]).to include(:name => "floe-persistent-volume-0", :persistentVolumeClaim => {:claimName => "pvc-a"})
+        expect(vols[1]).to include(:name => "floe-persistent-volume-1", :persistentVolumeClaim => {:claimName => "pvc-b"})
+      end
+
+      subject.run_async!("docker://hello-world:latest", {}, {}, context,
+                         :volumes => [
+                           {:volume_name => "pvc-a", :container_path => "/a"},
+                           {:volume_name => "pvc-b", :container_path => "/b"}
+                         ])
+    end
+
+    it "mixes persistent and staged volumes together" do
+      let_s3_runner = described_class.new(runner_options.merge(
+                                            "s3_endpoint"   => "https://minio.example.com",
+                                            "s3_bucket"     => "floe-inputs",
+                                            "s3_access_key" => "access",
+                                            "s3_secret_key" => "secret"
+                                          ))
+
+      source_dir = Dir.mktmpdir
+      FileUtils.touch(File.join(source_dir, "env"))
+
+      begin
+        require "aws-sdk-s3"
+        s3_client = instance_double(Aws::S3::Client)
+        presigner = instance_double(Aws::S3::Presigner)
+        allow(Aws::S3::Client).to receive(:new).and_return(s3_client)
+        allow(Aws::S3::Presigner).to receive(:new).and_return(presigner)
+        allow(s3_client).to receive(:put_object)
+        allow(s3_client).to receive(:delete_object)
+        allow(presigner).to receive(:presigned_url).and_return("https://minio.example.com/presigned")
+
+        expect(kubeclient).to receive(:create_pod) do |spec|
+          vols = spec.dig(:spec, :volumes)
+          # emptyDir from staged + PVC from persistent
+          expect(vols).to include(hash_including(:emptyDir => {}))
+          expect(vols).to include(hash_including(:persistentVolumeClaim => {:claimName => "my-pvc"}))
+        end
+
+        let_s3_runner.run_async!("docker://hello-world:latest", {}, {}, context,
+                                 :volumes => [
+                                   {:host_path => source_dir, :container_path => "/staged"},
+                                   {:volume_name => "my-pvc", :container_path => "/data"}
+                                 ])
+      ensure
+        FileUtils.remove_entry(source_dir)
+      end
+    end
+  end
+
+  describe "#cleanup with staged_volumes" do
+    let(:s3_runner_options) do
+      runner_options.merge(
+        "s3_endpoint"   => "https://minio.example.com",
+        "s3_bucket"     => "floe-inputs",
+        "s3_access_key" => "access",
+        "s3_secret_key" => "secret"
+      )
+    end
+    let(:subject)   { described_class.new(s3_runner_options) }
+    let(:s3_client) { instance_double(Aws::S3::Client) }
+
+    before do
+      require "aws-sdk-s3"
+      allow(Aws::S3::Client).to receive(:new).and_return(s3_client)
+    end
+
+    it "deletes S3 objects for staged volumes stored in runner_context" do
+      expect(kubeclient).to receive(:delete_pod).with("my-pod", "default")
+      expect(s3_client).to receive(:delete_object).with(:bucket => "floe-inputs", :key => "floe/job/runner.tar.gz")
+
+      subject.cleanup({"container_ref" => "my-pod", "staged_volumes" => [{"s3_key" => "floe/job/runner.tar.gz"}]})
+    end
+
+    it "does not call delete_object when there are no staged volumes" do
+      expect(kubeclient).to receive(:delete_pod).with("my-pod", "default")
+      expect(s3_client).not_to receive(:delete_object)
+
+      subject.cleanup({"container_ref" => "my-pod"})
+    end
+  end
+
+  describe "#output with primary_container" do
+    let(:runner_context) { {"container_ref" => "my-pod", "primary_container" => "floe-hello-world"} }
+
+    it "fetches logs from the named container" do
+      expect(kubeclient).to receive(:get_pod_log).with("my-pod", "default", :container => "floe-hello-world")
+                                                 .and_return(RestClient::Response.new("output"))
+      subject.output(runner_context)
+    end
+  end
+
+  describe "#inspect" do
+    let(:runner_options) { {"server" => "https://kubernetes.local:6443", "token" => "my-token", "s3_access_key" => "s3accesskey", "s3_secret_key" => "s3secretkey"} }
+
+    it "does not include token" do
+      expect(subject.inspect).not_to include("my-token")
+    end
+
+    it "does not include s3_access_key" do
+      expect(subject.inspect).not_to include("s3accesskey")
+    end
+
+    it "does not include s3_secret_key" do
+      expect(subject.inspect).not_to include("s3secretkey")
+    end
+
+    it "includes other instance variables" do
+      expect(subject.inspect).to include("@namespace")
+    end
+  end
+
   def stub_kubernetes_run(spec: nil, namespace: "default", status: 1, cleanup: true)
     # start
     if spec

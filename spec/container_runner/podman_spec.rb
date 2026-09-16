@@ -119,6 +119,38 @@ RSpec.describe Floe::ContainerRunner::Podman do
   end
 
   context "run_async! parameters" do
+    context "with volumes" do
+      it "defaults volume options to z" do
+        stub_good_run!("podman", :params => ["run", :detach, [:label, "execution_id=#{execution_id}"], [:v, "/tmp/runner:/runner:z"], [:name, a_string_starting_with("floe-hello-world-")], "hello-world:latest"], :output => "#{container_id}\n")
+
+        subject.run_async!("docker://hello-world:latest", {}, {}, context, :volumes => [{:host_path => "/tmp/runner", :container_path => "/runner"}])
+      end
+
+      it "uses caller-supplied options when provided" do
+        stub_good_run!("podman", :params => ["run", :detach, [:label, "execution_id=#{execution_id}"], [:v, "/tmp/runner:/runner:ro"], [:name, a_string_starting_with("floe-hello-world-")], "hello-world:latest"], :output => "#{container_id}\n")
+
+        subject.run_async!("docker://hello-world:latest", {}, {}, context, :volumes => [{:host_path => "/tmp/runner", :container_path => "/runner", :options => "ro"}])
+      end
+
+      it "passes multiple volumes to podman run" do
+        stub_good_run!("podman", :params => ["run", :detach, [:label, "execution_id=#{execution_id}"], [:v, "/tmp/a:/a:z"], [:v, "/tmp/b:/b:ro"], [:name, a_string_starting_with("floe-hello-world-")], "hello-world:latest"], :output => "#{container_id}\n")
+
+        subject.run_async!("docker://hello-world:latest", {}, {}, context, :volumes => [{:host_path => "/tmp/a", :container_path => "/a"}, {:host_path => "/tmp/b", :container_path => "/b", :options => "ro"}])
+      end
+
+      it "passes a named volume using volume_name" do
+        stub_good_run!("podman", :params => ["run", :detach, [:label, "execution_id=#{execution_id}"], [:v, "my-vol:/runner:z"], [:name, a_string_starting_with("floe-hello-world-")], "hello-world:latest"], :output => "#{container_id}\n")
+
+        subject.run_async!("docker://hello-world:latest", {}, {}, context, :volumes => [{:volume_name => "my-vol", :container_path => "/runner"}])
+      end
+
+      it "passes a named volume with explicit options" do
+        stub_good_run!("podman", :params => ["run", :detach, [:label, "execution_id=#{execution_id}"], [:v, "my-vol:/runner:ro"], [:name, a_string_starting_with("floe-hello-world-")], "hello-world:latest"], :output => "#{container_id}\n")
+
+        subject.run_async!("docker://hello-world:latest", {}, {}, context, :volumes => [{:volume_name => "my-vol", :container_path => "/runner", :options => "ro"}])
+      end
+    end
+
     context "with docker runner options" do
       context "with --identity" do
         let(:runner_options) { {"identity" => ".ssh/id_rsa.pub"} }
