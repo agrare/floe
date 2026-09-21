@@ -26,7 +26,7 @@ module Floe
         raise Floe::InvalidExecutionInput, "Invalid State Machine Execution Input: #{err}: was expecting (JSON String, Number, Array, Object or token 'null', 'true' or 'false')"
       end
 
-      def prepare_start(start_at)
+      def prepare_start(start_at, timeout_seconds: nil)
         return if started?
 
         state["Name"]  = start_at
@@ -35,6 +35,7 @@ module Floe
 
         execution["Id"]      ||= SecureRandom.uuid
         execution["StartTime"] = Time.now.utc.iso8601
+        execution["TimeoutAt"] = (Time.now.utc + timeout_seconds).iso8601 if timeout_seconds
 
         if logger.respond_to?(:execution_id=)
           logger.execution_id = execution["Id"]

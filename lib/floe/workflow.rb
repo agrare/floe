@@ -78,7 +78,7 @@ module Floe
       end
     end
 
-    attr_reader :comment, :context, :version
+    attr_reader :comment, :context, :timeout_seconds, :version
 
     def initialize(payload, context = nil, credentials = nil, name = nil)
       payload     = JSON.parse(payload)     if payload.kind_of?(String)
@@ -89,9 +89,10 @@ module Floe
       # caller should really put credentials into context and not pass that variable
       context.credentials = credentials if credentials
 
-      @context = context
-      @comment = payload["Comment"]
-      @version = payload["Version"] || "1.0"
+      @context         = context
+      @comment         = payload["Comment"]
+      @timeout_seconds = payload["TimeoutSeconds"]
+      @version         = payload["Version"] || "1.0"
 
       super(payload, name)
     rescue Floe::Error
@@ -109,6 +110,14 @@ module Floe
     # NOTE: If running manually, make sure to call start_workflow at startup
     def step_nonblock
       return Errno::EPERM if end?
+
+      if timed_out?
+        context.next_state = nil
+        context.output     = {"Error" => "States.Timeout", "Cause" => "Workflow timed out"}
+        context.state_history << context.state
+        end_workflow!
+        return 0
+      end
 
       result = current_state.run_nonblock!(context)
       return result if result != 0
@@ -139,7 +148,9 @@ module Floe
     end
 
     def timeout_at
-      current_state.timeout_at(context)
+      workflow_timeout = context.execution["TimeoutAt"] && Time.parse(context.execution["TimeoutAt"])
+
+      [current_state.timeout_at(context), workflow_timeout].compact.min
     end
 
     def status
@@ -156,7 +167,7 @@ module Floe
 
     # setup a workflow
     def start_workflow
-      context.prepare_start(start_at)
+      context.prepare_start(start_at, :timeout_seconds => timeout_seconds)
       self
     end
 
@@ -175,6 +186,16 @@ module Floe
     end
 
     private
+
+    def timed_out?
+      t = context.execution["TimeoutAt"] && Time.parse(context.execution["TimeoutAt"])
+      t && Time.now.utc > t
+    end
+
+    def validate_workflow!
+      super
+      invalid_field_error!("TimeoutSeconds", timeout_seconds, "must be a positive, non-zero integer") if timeout_seconds && (!timeout_seconds.kind_of?(Integer) || timeout_seconds <= 0)
+    end
 
     def step!
       next_state = {"Name" => context.next_state, "Guid" => SecureRandom.uuid, "PreviousStateGuid" => context.state["Guid"]}

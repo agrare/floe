@@ -45,6 +45,24 @@ RSpec.describe Floe::Workflow do
 
       expect { described_class.new(payload, "invalid context") }.to raise_error(Floe::InvalidExecutionInput, /Invalid State Machine Execution Input: unexpected character: /)
     end
+
+    it "raises an exception for TimeoutSeconds string" do
+      payload = {"StartAt" => "FirstState", "TimeoutSeconds" => "10", "States" => {"FirstState" => {"Type" => "Succeed"}}}
+
+      expect { described_class.new(payload) }.to raise_error(Floe::InvalidWorkflowError, "State Machine field \"TimeoutSeconds\" value \"10\" must be a positive, non-zero integer")
+    end
+
+    it "raises an exception for a negative TimeoutSeconds" do
+      payload = {"StartAt" => "FirstState", "TimeoutSeconds" => -1, "States" => {"FirstState" => {"Type" => "Succeed"}}}
+
+      expect { described_class.new(payload) }.to raise_error(Floe::InvalidWorkflowError, "State Machine field \"TimeoutSeconds\" value \"-1\" must be a positive, non-zero integer")
+    end
+
+    it "raises an exception for a zero TimeoutSeconds" do
+      payload = {"StartAt" => "FirstState", "TimeoutSeconds" => 0, "States" => {"FirstState" => {"Type" => "Succeed"}}}
+
+      expect { described_class.new(payload) }.to raise_error(Floe::InvalidWorkflowError, "State Machine field \"TimeoutSeconds\" value \"0\" must be a positive, non-zero integer")
+    end
   end
 
   describe "#run_nonblock" do
@@ -184,6 +202,30 @@ RSpec.describe Floe::Workflow do
       ctx.execution["EndTime"] = Time.now.utc
 
       expect(workflow.step_nonblock).to eq(Errno::EPERM)
+    end
+
+    context "with TimeoutSeconds exceeded" do
+      let(:payload) { {"StartAt" => "FirstState", "TimeoutSeconds" => 30, "States" => {"FirstState" => {"Type" => "Wait", "Seconds" => 600, "End" => true}}} }
+      let(:workflow) { Floe::Workflow.new(payload, ctx) }
+
+      it "fails the workflow with States.Timeout" do
+        Timecop.travel(Time.now.utc - 60) do
+          workflow.run_nonblock
+        end
+
+        workflow.step_nonblock
+
+        expect(workflow.status).to eq("failure")
+        expect(workflow.end?).to   eq(true)
+        expect(ctx.output).to eq("Error" => "States.Timeout", "Cause" => "Workflow timed out")
+      end
+
+      it "does not fail a workflow that has not yet timed out" do
+        workflow.run_nonblock
+
+        expect(workflow.status).to eq("running")
+        expect(workflow.end?).to   eq(false)
+      end
     end
 
     it "takes 2 steps" do
@@ -349,6 +391,18 @@ RSpec.describe Floe::Workflow do
     it "handles a comment" do
       workflow = Floe::Workflow.new({"StartAt" => "First", "Comment" => "great stuff", "States" => {"First" => {"Type" => "Succeed"}}})
       expect(workflow.comment).to eq("great stuff")
+    end
+  end
+
+  describe "#timeout_seconds" do
+    it "handles no timeout" do
+      workflow = Floe::Workflow.new({"StartAt" => "First", "States" => {"First" => {"Type" => "Succeed"}}})
+      expect(workflow.timeout_seconds).to be_nil
+    end
+
+    it "uses the provided timeout" do
+      workflow = Floe::Workflow.new({"StartAt" => "First", "TimeoutSeconds" => 60, "States" => {"First" => {"Type" => "Succeed"}}})
+      expect(workflow.timeout_seconds).to eq(60)
     end
   end
 

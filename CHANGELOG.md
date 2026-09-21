@@ -4,6 +4,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
 ### Added
+- Implement StateMachine TimeoutSeconds ([#350](https://github.com/ManageIQ/floe/pull/350))
 - Add timeout_at to Workflow and State ([#351](https://github.com/ManageIQ/floe/pull/351))
 
 ## [0.21.0] - 2026-09-16
