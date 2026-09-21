@@ -351,4 +351,16 @@ RSpec.describe Floe::Workflow do
       expect(workflow.comment).to eq("great stuff")
     end
   end
+
+  describe "#version" do
+    it "defaults to '1.0' when not specified" do
+      workflow = Floe::Workflow.new({"StartAt" => "First", "States" => {"First" => {"Type" => "Succeed"}}})
+      expect(workflow.version).to eq("1.0")
+    end
+
+    it "uses the provided version" do
+      workflow = Floe::Workflow.new({"StartAt" => "First", "Version" => "1.1", "States" => {"First" => {"Type" => "Succeed"}}})
+      expect(workflow.version).to eq("1.1")
+    end
+  end
 end

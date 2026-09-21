@@ -78,7 +78,7 @@ module Floe
       end
     end
 
-    attr_reader :comment, :context
+    attr_reader :comment, :context, :version
 
     def initialize(payload, context = nil, credentials = nil, name = nil)
       payload     = JSON.parse(payload)     if payload.kind_of?(String)
@@ -91,6 +91,7 @@ module Floe
 
       @context = context
       @comment = payload["Comment"]
+      @version = payload["Version"] || "1.0"
 
       super(payload, name)
     rescue Floe::Error
