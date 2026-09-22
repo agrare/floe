@@ -42,9 +42,10 @@ module Floe
           break if timeout && (timeout.zero? || Time.now.utc > run_until)
 
           # Find the earliest time that we should wakeup if no container events
-          # are caught, either a workflow in a Wait or Retry state or we've
-          # exceeded the requested timeout
+          # are caught, either a workflow in a Wait, Retry, or Timeout state or
+          # we've exceeded the requested timeout
           wait_until = workflows.map(&:wait_until)
+                                .concat(workflows.map(&:timeout_at))
                                 .unshift(run_until)
                                 .compact
                                 .min
@@ -134,6 +135,10 @@ module Floe
 
     def wait_until
       current_state.wait_until(context)
+    end
+
+    def timeout_at
+      current_state.timeout_at(context)
     end
 
     def status
