@@ -619,7 +619,6 @@ RSpec.describe Floe::Workflow::States::Task do
         let(:input) { {} }
 
         it "raises an invalid path error" do
-          expect_run_async(input, :running => true)
           workflow.run_nonblock
           expect(ctx.next_state).to be_nil
           expect(ctx.status).to     eq("failure")
@@ -667,6 +666,76 @@ RSpec.describe Floe::Workflow::States::Task do
       workflow.start_workflow
       state = workflow.current_state
       expect(state.end?).to be true
+    end
+  end
+
+  describe "#timeout_at" do
+    let(:workflow) { make_workflow(ctx, {"State" => {"Type" => "Task", "Resource" => resource, "End" => true}}) }
+    let(:state)    { workflow.states_by_name["State"] }
+
+    context "when TimeoutAt is nil in the state context" do
+      it "returns nil" do
+        expect(state.timeout_at(ctx)).to be_nil
+      end
+    end
+
+    context "when TimeoutAt is set in the state context" do
+      before do
+        ctx.state["TimeoutAt"] = "2023-01-01T00:00:10Z"
+      end
+
+      it "returns the parsed Time object" do
+        expect(state.timeout_at(ctx)).to eq(Time.parse("2023-01-01T00:00:10Z"))
+      end
+    end
+  end
+
+  describe "#set_timeout_at! (private)" do
+    let(:entered_time) { "2023-01-01T00:00:00Z" }
+
+    before do
+      ctx.state["EnteredTime"] = entered_time
+      ctx.state["Input"]       = input
+    end
+
+    context "when TimeoutSeconds and TimeoutSecondsPath are both nil" do
+      let(:workflow) { make_workflow(ctx, {"State" => {"Type" => "Task", "Resource" => resource, "End" => true}}) }
+      let(:state)    { workflow.states_by_name["State"] }
+
+      it "does not set TimeoutAt" do
+        state.send(:set_timeout_at!, ctx)
+        expect(ctx.state).not_to have_key("TimeoutAt")
+      end
+    end
+
+    context "with TimeoutSeconds" do
+      let(:workflow) { make_workflow(ctx, {"State" => {"Type" => "Task", "Resource" => resource, "TimeoutSeconds" => 10, "End" => true}}) }
+      let(:state)    { workflow.states_by_name["State"] }
+
+      it "sets TimeoutAt based on EnteredTime and TimeoutSeconds" do
+        state.send(:set_timeout_at!, ctx)
+        expect(ctx.state["TimeoutAt"]).to eq("2023-01-01T00:00:10Z")
+      end
+    end
+
+    context "with TimeoutSecondsPath" do
+      let(:input)    { {"Timeout" => 20} }
+      let(:ctx)      { Floe::Workflow::Context.new(:input => input.to_json) }
+      let(:workflow) { make_workflow(ctx, {"State" => {"Type" => "Task", "Resource" => resource, "TimeoutSecondsPath" => "$.Timeout", "End" => true}}) }
+      let(:state)    { workflow.states_by_name["State"] }
+
+      it "sets TimeoutAt based on EnteredTime and TimeoutSecondsPath" do
+        state.send(:set_timeout_at!, ctx)
+        expect(ctx.state["TimeoutAt"]).to eq("2023-01-01T00:00:20Z")
+      end
+
+      context "with an invalid value" do
+        let(:input) { {"Timeout" => -1} }
+
+        it "raises a PathError" do
+          expect { state.send(:set_timeout_at!, ctx) }.to raise_error(Floe::PathError, "TimeoutSecondsPath references an invalid value [-1]")
+        end
+      end
     end
   end
 

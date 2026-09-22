@@ -39,8 +39,7 @@ module Floe
         def start(context)
           super
 
-          # Wakeup no later than timeout_seconds to check if the Resource has timed out
-          wait_until!(context, :seconds => timeout_seconds) if timeout_seconds
+          set_timeout_at!(context)
 
           input          = process_input(context)
           secrets        = credentials&.value(context, context.input)
@@ -80,7 +79,21 @@ module Floe
           @end
         end
 
+        def timeout_at(context)
+          context.state["TimeoutAt"] && Time.parse(context.state["TimeoutAt"])
+        end
+
         private
+
+        def set_timeout_at!(context)
+          return if timeout_seconds.nil? && timeout_seconds_path.nil?
+
+          entered_time = Time.parse(context.state["EnteredTime"])
+          seconds      = timeout_seconds || timeout_seconds_path.value(context, context.input)
+          raise Floe::PathError, "TimeoutSecondsPath references an invalid value [#{seconds}]" unless seconds.kind_of?(Integer) && seconds > 0
+
+          context.state["TimeoutAt"] = (entered_time + seconds).iso8601
+        end
 
         attr_reader :runner
 
@@ -108,19 +121,8 @@ module Floe
         end
 
         def timed_out?(context)
-          return false if timeout_seconds.nil? && timeout_seconds_path.nil?
-
-          timeout      = timeout_seconds || timeout_seconds_path.value(context, context.input)
-          entered_time = Time.parse(context.state["EnteredTime"])
-
-          Time.now.utc > entered_time + timeout
-        end
-
-        def task_timed_out!(context)
-          context.state["RunnerContext"]["Error"] = "States.Timeout"
-          context.state["RunnerContext"]["Cause"] = "Task timed out"
-
-          false
+          t = timeout_at(context)
+          t && Time.now.utc > t
         end
 
         def parse_error(output)

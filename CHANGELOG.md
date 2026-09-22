@@ -3,6 +3,8 @@ All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
+### Added
+- Add timeout_at to Workflow and State ([#351](https://github.com/ManageIQ/floe/pull/351))
 
 ## [0.21.0] - 2026-09-16
 ### Added

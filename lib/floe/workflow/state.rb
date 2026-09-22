@@ -115,6 +115,10 @@ module Floe
         context.state["WaitUntil"] && Time.parse(context.state["WaitUntil"])
       end
 
+      def timeout_at(_context)
+        nil
+      end
+
       def short_name
         name.last
       end
