@@ -88,8 +88,9 @@ module Floe
         def set_timeout_at!(context)
           return if timeout_seconds.nil? && timeout_seconds_path.nil?
 
-          seconds      = timeout_seconds || timeout_seconds_path.value(context, context.input)
           entered_time = Time.parse(context.state["EnteredTime"])
+          seconds      = timeout_seconds || timeout_seconds_path.value(context, context.input)
+          raise Floe::PathError, "TimeoutSecondsPath references an invalid value [#{seconds}]" unless seconds.kind_of?(Integer) && seconds > 0
 
           context.state["TimeoutAt"] = (entered_time + seconds).iso8601
         end

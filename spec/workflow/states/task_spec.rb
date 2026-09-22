@@ -690,7 +690,7 @@ RSpec.describe Floe::Workflow::States::Task do
     end
   end
 
-  describe "#set_timeout_at!" do
+  describe "#set_timeout_at! (private)" do
     let(:entered_time) { "2023-01-01T00:00:00Z" }
 
     before do
@@ -727,6 +727,14 @@ RSpec.describe Floe::Workflow::States::Task do
       it "sets TimeoutAt based on EnteredTime and TimeoutSecondsPath" do
         state.send(:set_timeout_at!, ctx)
         expect(ctx.state["TimeoutAt"]).to eq("2023-01-01T00:00:20Z")
+      end
+
+      context "with an invalid value" do
+        let(:input) { {"Timeout" => -1} }
+
+        it "raises a PathError" do
+          expect { state.send(:set_timeout_at!, ctx) }.to raise_error(Floe::PathError, "TimeoutSecondsPath references an invalid value [-1]")
+        end
       end
     end
   end
