@@ -45,8 +45,9 @@ module Floe
       def run_nonblock!(context)
         # Only start the state if it isn't already started and it isn't waiting
         # from a prior Retry.
-        start(context)       unless started?(context) || waiting?(context)
-        return Errno::EAGAIN unless ready?(context)
+        start(context)           unless started?(context) || waiting?(context)
+        raise Floe::TimeoutError if timed_out?(context)
+        return Errno::EAGAIN     unless ready?(context)
 
         finish(context)
       rescue Floe::ExecutionError => e
@@ -115,8 +116,13 @@ module Floe
         context.state["WaitUntil"] && Time.parse(context.state["WaitUntil"])
       end
 
-      def timeout_at(_context)
-        nil
+      def timeout_at(context)
+        context.execution["TimeoutAt"] && Time.parse(context.execution["TimeoutAt"])
+      end
+
+      def timed_out?(context)
+        t = timeout_at(context)
+        t && Time.now.utc > t
       end
 
       def short_name

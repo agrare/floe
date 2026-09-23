@@ -217,7 +217,7 @@ RSpec.describe Floe::Workflow do
 
         expect(workflow.status).to eq("failure")
         expect(workflow.end?).to   eq(true)
-        expect(ctx.output).to eq("Error" => "States.Timeout", "Cause" => "Workflow timed out")
+        expect(ctx.output).to eq("Error" => "States.Timeout")
       end
 
       it "does not fail a workflow that has not yet timed out" do

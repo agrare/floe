@@ -61,7 +61,6 @@ module Floe
         end
 
         def running?(context)
-          raise Floe::TimeoutError if timed_out?(context)
           return false if finished?(context)
 
           runner.status!(context.state["RunnerContext"])
@@ -80,7 +79,10 @@ module Floe
         end
 
         def timeout_at(context)
-          context.state["TimeoutAt"] && Time.parse(context.state["TimeoutAt"])
+          workflow_timeout = super
+          task_timeout     = context.state["TimeoutAt"] && Time.parse(context.state["TimeoutAt"])
+
+          [workflow_timeout, task_timeout].compact.min
         end
 
         private
@@ -118,11 +120,6 @@ module Floe
 
         def success?(context)
           runner.success?(context.state["RunnerContext"])
-        end
-
-        def timed_out?(context)
-          t = timeout_at(context)
-          t && Time.now.utc > t
         end
 
         def parse_error(output)

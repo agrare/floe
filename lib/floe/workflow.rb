@@ -111,14 +111,6 @@ module Floe
     def step_nonblock
       return Errno::EPERM if end?
 
-      if timed_out?
-        context.next_state = nil
-        context.output     = {"Error" => "States.Timeout", "Cause" => "Workflow timed out"}
-        context.state_history << context.state
-        end_workflow!
-        return 0
-      end
-
       result = current_state.run_nonblock!(context)
       return result if result != 0
 
@@ -148,9 +140,7 @@ module Floe
     end
 
     def timeout_at
-      workflow_timeout = context.execution["TimeoutAt"] && Time.parse(context.execution["TimeoutAt"])
-
-      [current_state.timeout_at(context), workflow_timeout].compact.min
+      current_state.timeout_at(context)
     end
 
     def status
@@ -186,11 +176,6 @@ module Floe
     end
 
     private
-
-    def timed_out?
-      t = context.execution["TimeoutAt"] && Time.parse(context.execution["TimeoutAt"])
-      t && Time.now.utc > t
-    end
 
     def validate_workflow!
       super
