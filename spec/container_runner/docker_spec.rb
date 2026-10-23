@@ -184,6 +184,61 @@ RSpec.describe Floe::ContainerRunner::Docker do
     end
   end
 
+  describe "#wait" do
+    let(:now)  { Time.parse("2024-01-01 00:00:00 UTC") }
+    # Pipe is always readable (returns self) but gets returns nil, simulating EOF.
+    let(:r_io) { double("r_io", :close => nil, :gets => nil) }
+    let(:w_io) { double("w_io", :close => nil) }
+    let(:pid)  { 99999 }
+
+    before do
+      Timecop.freeze(now)
+      allow(r_io).to receive(:wait_readable).and_return(r_io)
+      allow(IO).to receive(:pipe).and_return([r_io, w_io])
+      allow(Kernel).to receive(:spawn).and_return(pid)
+      allow(Process).to receive(:detach)
+      allow(Process).to receive(:kill)
+    end
+
+    after { Timecop.return }
+
+    context "without a timeout" do
+      it "does not pass --until to docker events" do
+        expect(Kernel).to receive(:spawn) do |_env, _cmd, *args, **_opts|
+          expect(args).not_to include("--until")
+          pid
+        end
+
+        subject.wait
+      end
+
+      it "returns an empty array when no events arrive before the pipe closes" do
+        expect(subject.wait).to eq([])
+      end
+    end
+
+    context "with a timeout" do
+      let(:timeout) { 30 }
+
+      it "passes --until as a Unix epoch integer string" do
+        expected_until = (now + timeout).to_i.to_s
+
+        expect(Kernel).to receive(:spawn) do |_env, _cmd, *args, **_opts|
+          until_index = args.index("--until")
+          expect(until_index).not_to be_nil
+          expect(args[until_index + 1]).to eq(expected_until)
+          pid
+        end
+
+        subject.wait(:timeout => timeout)
+      end
+
+      it "returns an empty array when no events arrive before the pipe closes" do
+        expect(subject.wait(:timeout => timeout)).to eq([])
+      end
+    end
+  end
+
   describe "#cleanup" do
     let(:secrets_file) { "/tmp/secretfile" }
 

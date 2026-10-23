@@ -48,7 +48,7 @@ module Floe
       end
 
       def wait(timeout: nil, events: %i[create update delete], &block)
-        until_timestamp = (Time.now.utc + timeout).to_i if timeout
+        until_timestamp = Time.now.utc + timeout if timeout
 
         r, w = IO.pipe
 
@@ -168,7 +168,7 @@ module Floe
         since_timestamp = Time.now.utc.to_i
 
         params  = ["events", "--format", "{{json .}}", "--filter", "type=container", "--since", since_timestamp.to_s]
-        params += ["--until", until_timestamp.to_s] if until_timestamp
+        params += ["--until", until_timestamp.to_i.to_s] if until_timestamp
         params
       end
 
