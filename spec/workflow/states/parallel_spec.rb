@@ -384,3 +384,146 @@ RSpec.describe Floe::Workflow::States::Parallel do
     end
   end
 end
+
+RSpec.describe Floe::Workflow::States::Parallel, "with QueryLanguage JSONata" do
+  let(:input)    { {"a" => 3, "b" => 2} }
+  let(:ctx)      { Floe::Workflow::Context.new(:input => input.to_json) }
+  let(:workflow) { make_workflow(ctx, payload) }
+  let(:branches) do
+    [
+      {"StartAt" => "Add", "States" => {"Add" => {"Type" => "Pass", "End" => true, "Output" => "{% $states.input.a + $states.input.b %}"}}},
+      {"StartAt" => "Mul", "States" => {"Mul" => {"Type" => "Pass", "End" => true, "Output" => "{% $states.input.a * $states.input.b %}"}}}
+    ]
+  end
+  let(:parallel) { {"Type" => "Parallel", "QueryLanguage" => "JSONata", "Branches" => branches, "End" => true} }
+  let(:payload)  { {"ParallelState" => parallel} }
+
+  def run_workflow
+    workflow.run_nonblock
+    workflow
+  end
+
+  describe "#initialize" do
+    %w[Parameters InputPath OutputPath ResultPath ResultSelector].each do |field|
+      context "with #{field}" do
+        before { parallel[field] = "$" }
+
+        it { expect { workflow }.to raise_error(Floe::InvalidWorkflowError, "States.ParallelState field \"#{field}\" is not allowed when QueryLanguage is \"JSONata\"") }
+      end
+    end
+
+    context "with Arguments in a JSONPath state" do
+      let(:parallel) { {"Type" => "Parallel", "Branches" => [], "End" => true, "Arguments" => {}} }
+
+      it { expect { workflow }.to raise_error(Floe::InvalidWorkflowError, "States.ParallelState field \"Arguments\" is not allowed when QueryLanguage is \"JSONPath\"") }
+    end
+
+    it "gives the branches the QueryLanguage of the state" do
+      expect(workflow.states.first.branches.map(&:query_language)).to eq(%w[JSONata JSONata])
+    end
+
+    context "when the state overrides the workflow QueryLanguage" do
+      let(:workflow) { Floe::Workflow.new({"QueryLanguage" => "JSONPath", "StartAt" => "ParallelState", "States" => payload}, ctx) }
+
+      it "gives the branches the QueryLanguage of the state" do
+        expect(workflow.states.first.branches.map(&:query_language)).to eq(%w[JSONata JSONata])
+        expect(workflow.states.first.branches.first.states.first).to be_jsonata
+      end
+    end
+  end
+
+  describe "#run_nonblock" do
+    it "defaults the output to the results of the branches" do
+      expect(run_workflow.output).to eq("[5,6]")
+    end
+
+    context "with Arguments" do
+      before { parallel["Arguments"] = {"a" => "{% $states.input.a + 10 %}", "b" => "{% $states.input.b %}"} }
+
+      it "is the input of the branches" do
+        expect(run_workflow.output).to eq("[15,26]")
+      end
+    end
+
+    context "with Output" do
+      before { parallel["Output"] = {"sum" => "{% $states.result[0] %}", "product" => "{% $states.result[1] %}", "orig" => "{% $states.input.a %}"} }
+
+      it "can use $states.result and $states.input" do
+        expect(JSON.parse(run_workflow.output)).to eq("sum" => 5, "product" => 6, "orig" => 3)
+      end
+    end
+
+    context "with Assign" do
+      before { parallel["Assign"] = {"results" => "{% $states.result %}"} }
+
+      it "sets the variables" do
+        run_workflow
+
+        expect(ctx.variables).to eq("results" => [5, 6])
+      end
+    end
+
+    context "with variables in the parent" do
+      let(:branches) do
+        [{"StartAt" => "Read", "States" => {"Read" => {"Type" => "Pass", "End" => true, "Output" => "{% $myvar %}", "Assign" => {"myvar" => "changed"}}}}]
+      end
+
+      before { ctx.variables["myvar"] = "parent" }
+
+      it "can read them in the branches but not change them" do
+        expect(run_workflow.output).to eq(["parent"].to_json)
+        expect(ctx.variables).to eq("myvar" => "parent")
+      end
+    end
+
+    context "with a failing branch" do
+      let(:branches) { [{"StartAt" => "Boom", "States" => {"Boom" => {"Type" => "Fail", "Error" => "Boom"}}}] }
+
+      it "fails with the error of the branch" do
+        run_workflow
+
+        expect(ctx.status).to eq("failure")
+        expect(ctx.output).to eq("Error" => "Boom")
+      end
+
+      context "with a Catch" do
+        let(:payload) do
+          {
+            "ParallelState" => parallel.merge("End" => nil, "Next" => "Recover", "Catch" => [{"ErrorEquals" => ["Boom"], "Next" => "Recover", "Assign" => {"caught" => "{% $states.errorOutput.Error %}"}}]),
+            "Recover"       => {"Type" => "Pass", "QueryLanguage" => "JSONata", "End" => true}
+          }
+        end
+
+        it "defaults the Output to $states.errorOutput" do
+          run_workflow
+
+          expect(ctx.state_history.first["NextState"]).to eq("Recover")
+          expect(ctx.state_history.first["Output"]).to eq("Error" => "Boom")
+          expect(ctx.variables).to eq("caught" => "Boom")
+        end
+      end
+    end
+
+    context "with an Output expression which fails" do
+      before { parallel["Output"] = "{% $number('abc') %}" }
+
+      it "fails with States.QueryEvaluationError" do
+        run_workflow
+
+        expect(ctx.status).to eq("failure")
+        expect(ctx.output["Error"]).to eq("States.QueryEvaluationError")
+      end
+
+      it "can be caught" do
+        parallel["Catch"] = [{"ErrorEquals" => ["States.QueryEvaluationError"], "Next" => "Recover", "Output" => "recovered"}]
+        parallel["Next"]  = "Recover"
+        parallel.delete("End")
+        payload["Recover"] = {"Type" => "Pass", "QueryLanguage" => "JSONata", "End" => true}
+        run_workflow
+
+        expect(ctx.status).to eq("success")
+        expect(workflow.output).to eq("\"recovered\"")
+      end
+    end
+  end
+end

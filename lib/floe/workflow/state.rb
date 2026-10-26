@@ -21,13 +21,20 @@ module Floe
         end
       end
 
-      attr_reader :comment, :name, :type, :payload
+      attr_reader :comment, :name, :type, :payload, :query_language
 
-      def initialize(_workflow, name, payload)
-        @name     = name
-        @payload  = payload
-        @type     = payload["Type"]
-        @comment  = payload["Comment"]
+      def initialize(workflow, name, payload)
+        @name           = name
+        @payload        = payload
+        @type           = payload["Type"]
+        @comment        = payload["Comment"]
+        @query_language = payload["QueryLanguage"] || workflow.query_language
+
+        validate_query_language!
+      end
+
+      def jsonata?
+        query_language == "JSONata"
       end
 
       def wait(context, timeout: nil)
@@ -134,6 +141,22 @@ module Floe
       end
 
       private
+
+      def validate_query_language!
+        return if Floe::WorkflowBase::QUERY_LANGUAGES.include?(@query_language)
+
+        invalid_field_error!("QueryLanguage", @query_language, "must be one of #{Floe::WorkflowBase::QUERY_LANGUAGES.map { |l| "\"#{l}\"" }.join(", ")}")
+      end
+
+      # Fields are only valid for one of the query languages. Raise if the
+      # payload contains a field that is not valid for this state's language.
+      def validate_query_language_fields!(jsonpath_only:, jsonata_only:)
+        invalid_fields = jsonata? ? jsonpath_only : jsonata_only
+        field = invalid_fields.detect { |f| payload.key?(f) }
+        return if field.nil?
+
+        invalid_field_error!(field, nil, "is not allowed when QueryLanguage is \"#{query_language}\"")
+      end
 
       def wait_until!(context, seconds: nil, time: nil)
         context.state["WaitUntil"] =

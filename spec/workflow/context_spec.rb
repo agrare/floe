@@ -154,6 +154,77 @@ RSpec.describe Floe::Workflow::Context do
     end
   end
 
+  describe "#variables" do
+    it "defaults to {}" do
+      expect(ctx.variables).to eq({})
+    end
+
+    it "keeps variables from a given context" do
+      ctx = described_class.new({"Variables" => {"foo" => 1}}, :input => input.to_json)
+      expect(ctx.variables).to eq("foo" => 1)
+    end
+
+    it "is stored in the context" do
+      ctx.variables["foo"] = 1
+      expect(ctx["Variables"]).to eq("foo" => 1)
+    end
+  end
+
+  describe "#states_bindings" do
+    it "includes input and a context without credentials, variables and history" do
+      ctx = described_class.new({"Variables" => {"foo" => 1}}, :input => input.to_json, :credentials => credentials)
+      states = ctx.states_bindings({"a" => 1})["states"]
+
+      expect(states["input"]).to eq("a" => 1)
+      expect(states["context"]).to include("Execution", "State", "StateMachine", "Task")
+      expect(states["context"]).not_to include("Credentials", "Variables", "StateHistory")
+    end
+
+    it "includes the variables at the top level" do
+      ctx.variables["foo"] = 1
+
+      expect(ctx.states_bindings(nil)).to include("foo" => 1, "states" => a_kind_of(Hash))
+    end
+
+    it "does not define result or errorOutput unless passed" do
+      expect(ctx.states_bindings(nil)["states"].keys).to contain_exactly("input", "context")
+    end
+
+    it "defines result and errorOutput when passed" do
+      states = ctx.states_bindings(nil, :result => {"r" => 1}, :error_output => {"Error" => "e"})["states"]
+
+      expect(states).to include("result" => {"r" => 1}, "errorOutput" => {"Error" => "e"})
+    end
+
+    it "defines result when passed as nil" do
+      expect(ctx.states_bindings(nil, :result => nil)["states"]).to include("result" => nil)
+    end
+
+    it "does not let variables override states" do
+      ctx.variables["states"] = "bogus"
+
+      expect(ctx.states_bindings(1)["states"]).to include("input" => 1)
+    end
+  end
+
+  describe "#child_context" do
+    it "copies the variables" do
+      ctx.variables["foo"] = {"a" => 1}
+      child = ctx.child_context("x")
+
+      expect(child.variables).to eq("foo" => {"a" => 1})
+    end
+
+    it "does not share the variables with the parent" do
+      ctx.variables["foo"] = {"a" => 1}
+      child = ctx.child_context("x")
+      child.variables["foo"]["a"] = 2
+      child.variables["bar"] = 3
+
+      expect(ctx.variables).to eq("foo" => {"a" => 1})
+    end
+  end
+
   describe "#state_name" do
     it "first context" do
       ctx.state["Name"] = "FirstState"
@@ -201,8 +272,8 @@ RSpec.describe Floe::Workflow::Context do
   describe "#inspect" do
     it "has the same value with or without credentials" do
       # removing spaces because Hash#inspect in ruby 3.4 adds spaces that are not present before
-      expect(ctx.inspect.delete(" ")).to eq("#<Floe::Workflow::Context: {\"Execution\" => {\"Input\" => {\"x\" => \"y\"}}, \"State\" => {}, \"StateHistory\" => [], \"StateMachine\" => {}, \"Task\" => {}}>".delete(" "))
-      expect(ctx_creds.inspect.delete(" ")).to eq("#<Floe::Workflow::Context: {\"Execution\" => {\"Input\" => {\"x\" => \"y\"}}, \"State\" => {}, \"StateHistory\" => [], \"StateMachine\" => {}, \"Task\" => {}}>".delete(" "))
+      expect(ctx.inspect.delete(" ")).to eq("#<Floe::Workflow::Context: {\"Execution\" => {\"Input\" => {\"x\" => \"y\"}}, \"State\" => {}, \"StateHistory\" => [], \"StateMachine\" => {}, \"Task\" => {}, \"Variables\" => {}}>".delete(" "))
+      expect(ctx_creds.inspect.delete(" ")).to eq("#<Floe::Workflow::Context: {\"Execution\" => {\"Input\" => {\"x\" => \"y\"}}, \"State\" => {}, \"StateHistory\" => [], \"StateMachine\" => {}, \"Task\" => {}, \"Variables\" => {}}>".delete(" "))
     end
 
     it "doesn't expose credentials" do

@@ -4,13 +4,19 @@ module Floe
   class Workflow
     module States
       module InputOutputMixin
+        include JsonataMixin
+
         def process_input(context)
+          return process_input_jsonata(context) if jsonata?
+
           input = input_path.value(context, context.input)
           input = parameters.value(context, input) if parameters
           input
         end
 
         def process_output(context, results)
+          return process_output_jsonata(context, results, :result => results) if jsonata?
+
           return context.input.dup if results.nil?
           return if output_path.nil?
 
@@ -23,6 +29,13 @@ module Floe
           end
 
           output_path.value(context, output)
+        end
+
+        private
+
+        # In JSONata the input to the state is $states.input unless Arguments is given
+        def process_input_jsonata(context)
+          arguments ? arguments.value(jsonata_bindings(context)) : context.input
         end
       end
     end

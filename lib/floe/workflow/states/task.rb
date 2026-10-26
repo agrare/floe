@@ -15,23 +15,34 @@ module Floe
         def initialize(workflow, name, payload)
           super
 
+          validate_query_language_fields!(
+            :jsonpath_only => %w[Parameters InputPath OutputPath ResultPath ResultSelector TimeoutSecondsPath HeartbeatSecondsPath],
+            :jsonata_only  => %w[Arguments Output Assign]
+          )
+
           @resource = payload["Resource"]
           missing_field_error!("Resource") unless @resource.kind_of?(String)
           @runner = wrap_parser_error("Resource", @resource) { Floe::Runner.for_resource(@resource) }
 
           @next                 = payload["Next"]
           @end                  = !!payload["End"]
-          @timeout_seconds      = payload["TimeoutSeconds"]
-          @heartbeat_seconds    = payload["HeartbeatSeconds"]
+          @timeout_seconds      = parse_jsonata_value(payload["TimeoutSeconds"])
+          @heartbeat_seconds    = parse_jsonata_value(payload["HeartbeatSeconds"])
           @retry                = payload["Retry"].to_a.map.with_index { |retrier, i| Retrier.new(workflow, name + ["Retry", i.to_s], retrier) }
-          @catch                = payload["Catch"].to_a.map.with_index { |catcher, i| Catcher.new(workflow, name + ["Catch", i.to_s], catcher) }
-          @input_path           = Path.new(payload.fetch("InputPath", "$"))
-          @output_path          = Path.new(payload.fetch("OutputPath", "$"))
-          @result_path          = ReferencePath.new(payload.fetch("ResultPath", "$"))
-          @timeout_seconds_path = ReferencePath.new(payload["TimeoutSecondsPath"]) if payload["TimeoutSecondsPath"]
-          @parameters           = PayloadTemplate.new(payload["Parameters"])       if payload["Parameters"]
-          @result_selector      = PayloadTemplate.new(payload["ResultSelector"])   if payload["ResultSelector"]
-          @credentials          = PayloadTemplate.new(payload["Credentials"])      if payload["Credentials"]
+          @catch                = payload["Catch"].to_a.map.with_index { |catcher, i| Catcher.new(workflow, name + ["Catch", i.to_s], catcher, :query_language => query_language) }
+
+          if jsonata?
+            parse_jsonata_fields(payload, :arguments => true)
+            @credentials = JsonataTemplate.new(payload["Credentials"], name + ["Credentials"]) if payload["Credentials"]
+          else
+            @input_path           = Path.new(payload.fetch("InputPath", "$"))
+            @output_path          = Path.new(payload.fetch("OutputPath", "$"))
+            @result_path          = ReferencePath.new(payload.fetch("ResultPath", "$"))
+            @timeout_seconds_path = ReferencePath.new(payload["TimeoutSecondsPath"]) if payload["TimeoutSecondsPath"]
+            @parameters           = PayloadTemplate.new(payload["Parameters"])       if payload["Parameters"]
+            @result_selector      = PayloadTemplate.new(payload["ResultSelector"])   if payload["ResultSelector"]
+            @credentials          = PayloadTemplate.new(payload["Credentials"])      if payload["Credentials"]
+          end
 
           validate_state!(workflow)
         end
@@ -42,7 +53,7 @@ module Floe
           set_timeout_at!(context)
 
           input          = process_input(context)
-          secrets        = credentials&.value(context, context.input)
+          secrets        = credentials && (jsonata? ? credentials.value(jsonata_bindings(context)) : credentials.value(context, context.input))
           runner_context = runner.run_async!(resource, input, secrets, context)
 
           context.state["RunnerContext"] = runner_context
@@ -91,13 +102,19 @@ module Floe
           return if timeout_seconds.nil? && timeout_seconds_path.nil?
 
           entered_time = Time.parse(context.state["EnteredTime"])
-          seconds      = timeout_seconds || timeout_seconds_path.value(context, context.input)
+          seconds      = timeout_seconds_value(context)
           raise Floe::PathError, "TimeoutSecondsPath references an invalid value [#{seconds}]" unless seconds.kind_of?(Integer) && seconds > 0
 
           context.state["TimeoutAt"] = (entered_time + seconds).iso8601
         end
 
         attr_reader :runner
+
+        def timeout_seconds_value(context)
+          return evaluate_jsonata_value(context, timeout_seconds) if jsonata?
+
+          timeout_seconds || timeout_seconds_path.value(context, context.input)
+        end
 
         def validate_state!(workflow)
           validate_state_next!(workflow)
@@ -107,6 +124,7 @@ module Floe
 
         def validate_state_timeout_seconds!(workflow)
           return if @timeout_seconds.nil?
+          return if @timeout_seconds.kind_of?(JsonataExpression)
           return if @timeout_seconds.kind_of?(Integer) && @timeout_seconds > 0
 
           invalid_field_error!("TimeoutSeconds", @timeout_seconds, "must be positive, non-zero integer")

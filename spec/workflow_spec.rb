@@ -63,6 +63,81 @@ RSpec.describe Floe::Workflow do
 
       expect { described_class.new(payload) }.to raise_error(Floe::InvalidWorkflowError, "State Machine field \"TimeoutSeconds\" value \"0\" must be a positive, non-zero integer")
     end
+
+    describe "QueryLanguage" do
+      let(:states) { {"FirstState" => {"Type" => "Succeed"}} }
+
+      it "defaults to JSONPath" do
+        workflow = described_class.new({"StartAt" => "FirstState", "States" => states})
+
+        expect(workflow.query_language).to eq("JSONPath")
+        expect(workflow.states_by_name["FirstState"].query_language).to eq("JSONPath")
+        expect(workflow.states_by_name["FirstState"].jsonata?).to be false
+      end
+
+      it "accepts JSONata at the workflow level" do
+        workflow = described_class.new({"QueryLanguage" => "JSONata", "StartAt" => "FirstState", "States" => states})
+
+        expect(workflow.query_language).to eq("JSONata")
+        expect(workflow.states_by_name["FirstState"].query_language).to eq("JSONata")
+        expect(workflow.states_by_name["FirstState"].jsonata?).to be true
+      end
+
+      it "allows a state to override the workflow" do
+        states["FirstState"]["QueryLanguage"] = "JSONPath"
+        workflow = described_class.new({"QueryLanguage" => "JSONata", "StartAt" => "FirstState", "States" => states})
+
+        expect(workflow.query_language).to eq("JSONata")
+        expect(workflow.states_by_name["FirstState"].query_language).to eq("JSONPath")
+      end
+
+      it "raises an exception for an invalid workflow QueryLanguage" do
+        payload = {"QueryLanguage" => "JMESPath", "StartAt" => "FirstState", "States" => states}
+
+        expect { described_class.new(payload) }.to raise_error(Floe::InvalidWorkflowError, "State Machine field \"QueryLanguage\" value \"JMESPath\" must be one of \"JSONPath\", \"JSONata\"")
+      end
+
+      it "raises an exception for an invalid state QueryLanguage" do
+        states["FirstState"]["QueryLanguage"] = "JMESPath"
+        payload = {"StartAt" => "FirstState", "States" => states}
+
+        expect { described_class.new(payload) }.to raise_error(Floe::InvalidWorkflowError, "States.FirstState field \"QueryLanguage\" value \"JMESPath\" must be one of \"JSONPath\", \"JSONata\"")
+      end
+
+      it "is inherited by Parallel branches" do
+        states = {
+          "Par" => {
+            "Type"     => "Parallel",
+            "End"      => true,
+            "Branches" => [
+              {"StartAt" => "A", "States" => {"A" => {"Type" => "Succeed"}}},
+              {"StartAt" => "B", "QueryLanguage" => "JSONPath", "States" => {"B" => {"Type" => "Succeed"}}}
+            ]
+          }
+        }
+        workflow = described_class.new({"QueryLanguage" => "JSONata", "StartAt" => "Par", "States" => states})
+
+        branches = workflow.states_by_name["Par"].branches
+        expect(branches.map(&:query_language)).to eq(%w[JSONata JSONPath])
+        expect(branches.first.states_by_name["A"].jsonata?).to be true
+        expect(branches.last.states_by_name["B"].jsonata?).to be false
+      end
+
+      it "is inherited by Map item processors" do
+        states = {
+          "Map" => {
+            "Type"          => "Map",
+            "End"           => true,
+            "ItemProcessor" => {"StartAt" => "A", "States" => {"A" => {"Type" => "Succeed"}}}
+          }
+        }
+        workflow = described_class.new({"QueryLanguage" => "JSONata", "StartAt" => "Map", "States" => states})
+
+        processor = workflow.states_by_name["Map"].item_processor
+        expect(processor.query_language).to eq("JSONata")
+        expect(processor.states_by_name["A"].jsonata?).to be true
+      end
+    end
   end
 
   describe "#run_nonblock" do

@@ -3,6 +3,8 @@ All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
+### Added
+- Add JSONata support: `QueryLanguage`, `Arguments`, `Output`, `Assign`, `Condition`, `Items`, `$states` and variables
 
 ## [0.22.0] - 2026-10-23
 ### Fixed

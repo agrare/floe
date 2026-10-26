@@ -290,3 +290,156 @@ RSpec.describe Floe::Workflow::States::Pass do
     end
   end
 end
+
+RSpec.describe Floe::Workflow::States::Pass, "with QueryLanguage JSONata" do
+  let(:input)    { {"foo" => "bar", "num" => 2} }
+  let(:ctx)      { Floe::Workflow::Context.new(:input => input.to_json) }
+  let(:workflow) { make_workflow(ctx, payload) }
+  let(:state)    { {"Type" => "Pass", "QueryLanguage" => "JSONata", "Next" => "SuccessState"} }
+  let(:payload)  { {"PassState" => state, "SuccessState" => {"Type" => "Succeed"}} }
+
+  describe "#initialize" do
+    %w[Result Parameters InputPath OutputPath ResultPath].each do |field|
+      context "with #{field}" do
+        let(:state) { {"Type" => "Pass", "QueryLanguage" => "JSONata", "Next" => "SuccessState", field => "$"} }
+
+        it { expect { workflow }.to raise_error(Floe::InvalidWorkflowError, "States.PassState field \"#{field}\" is not allowed when QueryLanguage is \"JSONata\"") }
+      end
+    end
+
+    %w[Arguments Output Assign].each do |field|
+      context "with #{field} in a JSONPath state" do
+        let(:state) { {"Type" => "Pass", "Next" => "SuccessState", field => {}} }
+
+        it { expect { workflow }.to raise_error(Floe::InvalidWorkflowError, "States.PassState field \"#{field}\" is not allowed when QueryLanguage is \"JSONPath\"") }
+      end
+    end
+
+    context "with an invalid Output expression" do
+      let(:state) { {"Type" => "Pass", "QueryLanguage" => "JSONata", "Next" => "SuccessState", "Output" => "{% 1 + %}"} }
+
+      it { expect { workflow }.to raise_error(Floe::InvalidWorkflowError, /Invalid JSONata expression/) }
+    end
+
+    context "with an Assign that is not an object" do
+      let(:state) { {"Type" => "Pass", "QueryLanguage" => "JSONata", "Next" => "SuccessState", "Assign" => "{% 1 %}"} }
+
+      it { expect { workflow }.to raise_error(Floe::InvalidWorkflowError, /field "Assign".*must be an object/) }
+    end
+
+    context "with a workflow level QueryLanguage" do
+      let(:workflow) { Floe::Workflow.new({"QueryLanguage" => "JSONata", "StartAt" => "PassState", "States" => {"PassState" => {"Type" => "Pass", "End" => true, "Output" => "{% 1 %}"}}}, ctx) }
+
+      it { expect(workflow.states.first).to be_jsonata }
+    end
+  end
+
+  describe "#finish" do
+    it "defaults the output to the input" do
+      workflow.run_nonblock
+
+      expect(ctx.output).to eq(input)
+    end
+
+    context "with Output" do
+      let(:state) { {"Type" => "Pass", "QueryLanguage" => "JSONata", "Next" => "SuccessState", "Output" => {"x" => "{% $states.input.num * 10 %}", "y" => "static"}} }
+
+      it "evaluates the Output" do
+        workflow.run_nonblock
+
+        expect(ctx.output).to eq("x" => 20, "y" => "static")
+      end
+    end
+
+    context "with an Output expression that is not an object" do
+      let(:state) { {"Type" => "Pass", "QueryLanguage" => "JSONata", "End" => true, "Output" => "{% $states.input.foo %}"} }
+
+      it "outputs the value" do
+        workflow.run_nonblock
+
+        expect(ctx.output).to eq("bar")
+      end
+    end
+
+    context "with Assign" do
+      let(:state) { {"Type" => "Pass", "QueryLanguage" => "JSONata", "Next" => "SuccessState", "Assign" => {"a" => "{% $states.input.foo %}", "b" => 1}} }
+
+      it "sets the variables and keeps the input as the output" do
+        workflow.run_nonblock
+
+        expect(ctx.variables).to eq("a" => "bar", "b" => 1)
+        expect(ctx.output).to eq(input)
+      end
+    end
+
+    context "with Assign and Output" do
+      let(:state) do
+        {
+          "Type"          => "Pass",
+          "QueryLanguage" => "JSONata",
+          "Next"          => "SuccessState",
+          "Assign"        => {"a" => "{% $states.input.num %}", "b" => "{% $a %}"},
+          "Output"        => {"seen" => "{% $a %}"}
+        }
+      end
+
+      before { ctx.variables["a"] = "old" }
+
+      it "evaluates both using the variables from before the state" do
+        workflow.run_nonblock
+
+        expect(ctx.variables).to eq("a" => 2, "b" => "old")
+        expect(ctx.output).to eq("seen" => "old")
+      end
+    end
+
+    context "with a failing expression" do
+      let(:state) { {"Type" => "Pass", "QueryLanguage" => "JSONata", "End" => true, "Output" => "{% $number('abc') %}"} }
+
+      it "fails the workflow with States.QueryEvaluationError" do
+        workflow.run_nonblock
+
+        expect(ctx.status).to eq("failure")
+        expect(ctx.output["Error"]).to eq("States.QueryEvaluationError")
+      end
+
+      it "does not change the variables" do
+        state["Assign"] = {"a" => 1}
+        workflow.run_nonblock
+
+        expect(ctx.variables).to eq({})
+      end
+    end
+
+    context "with a variable from a previous state" do
+      let(:payload) do
+        {
+          "First"  => {"Type" => "Pass", "QueryLanguage" => "JSONata", "Next" => "Second", "Assign" => {"count" => "{% $states.input.num %}"}},
+          "Second" => {"Type" => "Pass", "QueryLanguage" => "JSONata", "End" => true, "Output" => {"count" => "{% $count + 1 %}"}}
+        }
+      end
+
+      it "can use the variable" do
+        workflow.run_nonblock
+
+        expect(ctx.output).to eq("count" => 3)
+        expect(ctx.status).to eq("success")
+      end
+    end
+
+    context "mixed with JSONPath states" do
+      let(:payload) do
+        {
+          "First"  => {"Type" => "Pass", "QueryLanguage" => "JSONata", "Next" => "Second", "Output" => {"value" => "{% $states.input.foo %}"}},
+          "Second" => {"Type" => "Pass", "QueryLanguage" => "JSONPath", "End" => true, "Parameters" => {"copy.$" => "$.value"}}
+        }
+      end
+
+      it "passes the output of one language to the other" do
+        workflow.run_nonblock
+
+        expect(ctx.output).to eq("copy" => "bar")
+      end
+    end
+  end
+end

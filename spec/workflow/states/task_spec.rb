@@ -754,3 +754,214 @@ RSpec.describe Floe::Workflow::States::Task do
       .and_return({"container_ref" => container_ref})
   end
 end
+
+RSpec.describe Floe::Workflow::States::Task, "with QueryLanguage JSONata" do
+  let(:input)         { {"foo" => {"bar" => "baz"}, "num" => 5} }
+  let(:ctx)           { Floe::Workflow::Context.new(:input => input.to_json) }
+  let(:resource)      { "docker://hello-world:latest" }
+  let(:mock_runner)   { double("Floe::Runner") }
+  let(:container_ref) { "container-d" }
+  let(:task)          { {"Type" => "Task", "QueryLanguage" => "JSONata", "Resource" => resource, "Next" => "SuccessState"} }
+  let(:payload)       { {"State" => task, "SuccessState" => {"Type" => "Succeed"}} }
+  let(:workflow)      { make_workflow(ctx, payload) }
+
+  before do
+    allow(Floe::Runner).to receive(:for_resource).and_return(mock_runner)
+  end
+
+  describe "#initialize" do
+    %w[Parameters InputPath OutputPath ResultPath ResultSelector TimeoutSecondsPath HeartbeatSecondsPath].each do |field|
+      context "with #{field}" do
+        let(:task) { {"Type" => "Task", "QueryLanguage" => "JSONata", "Resource" => resource, "Next" => "SuccessState", field => "$.foo"} }
+
+        it { expect { workflow }.to raise_error(Floe::InvalidWorkflowError, "States.State field \"#{field}\" is not allowed when QueryLanguage is \"JSONata\"") }
+      end
+    end
+
+    context "with Arguments in a JSONPath state" do
+      let(:task) { {"Type" => "Task", "Resource" => resource, "Next" => "SuccessState", "Arguments" => {}} }
+
+      it { expect { workflow }.to raise_error(Floe::InvalidWorkflowError, "States.State field \"Arguments\" is not allowed when QueryLanguage is \"JSONPath\"") }
+    end
+
+    context "with an invalid Arguments expression" do
+      let(:task) { {"Type" => "Task", "QueryLanguage" => "JSONata", "Resource" => resource, "Next" => "SuccessState", "Arguments" => {"a" => "{% ( %}"}} }
+
+      it { expect { workflow }.to raise_error(Floe::InvalidWorkflowError, /Invalid JSONata expression/) }
+    end
+
+    context "with a TimeoutSeconds expression" do
+      before { task["TimeoutSeconds"] = "{% $states.input.num %}" }
+
+      it { expect { workflow }.not_to raise_error }
+    end
+
+    context "with an invalid static TimeoutSeconds" do
+      before { task["TimeoutSeconds"] = -1 }
+
+      it { expect { workflow }.to raise_error(Floe::InvalidWorkflowError, /TimeoutSeconds/) }
+    end
+  end
+
+  describe "Arguments" do
+    it "defaults to the state input" do
+      expect_run_async(input, :output => nil)
+
+      workflow.run_nonblock
+    end
+
+    context "with Arguments" do
+      before { task["Arguments"] = {"var1" => "{% $states.input.foo.bar %}", "num" => "{% $states.input.num + 1 %}", "static" => "x"} }
+
+      it "passes the evaluated Arguments to the runner" do
+        expect_run_async({"var1" => "baz", "num" => 6, "static" => "x"}, :output => nil)
+
+        workflow.run_nonblock
+      end
+    end
+
+    context "with Arguments using a variable" do
+      before do
+        task["Arguments"] = {"v" => "{% $myvar %}"}
+        ctx.variables["myvar"] = "hello"
+      end
+
+      it "can read the variable" do
+        expect_run_async({"v" => "hello"}, :output => nil)
+
+        workflow.run_nonblock
+      end
+    end
+
+    context "with Credentials" do
+      before do
+        task["Credentials"] = {"username" => "{% $states.input.foo.bar %}"}
+      end
+
+      it "evaluates the credentials" do
+        expect_run_async(input, {"username" => "baz"}, :output => nil)
+
+        workflow.run_nonblock
+      end
+    end
+  end
+
+  describe "Output" do
+    it "defaults to $states.result" do
+      expect_run_async(input, :output => '{"response": [1, 2]}')
+
+      workflow.run_nonblock
+
+      expect(ctx.state_history.first["Output"]).to eq("response" => [1, 2])
+    end
+
+    it "defaults to the result which is nil when the runner has no JSON output" do
+      expect_run_async(input, :output => "HELLO")
+
+      workflow.run_nonblock
+
+      expect(ctx.state_history.first["Output"]).to be_nil
+    end
+
+    context "with Output" do
+      before { task["Output"] = {"first" => "{% $states.result.response[0] %}", "in" => "{% $states.input.num %}"} }
+
+      it "can use $states.result and $states.input" do
+        expect_run_async(input, :output => '{"response": [1, 2]}')
+
+        workflow.run_nonblock
+
+        expect(ctx.state_history.first["Output"]).to eq("first" => 1, "in" => 5)
+      end
+    end
+
+    context "with Assign" do
+      before { task["Assign"] = {"resp" => "{% $states.result.response %}", "n" => "{% $states.input.num %}"} }
+
+      it "sets the variables and uses the result as the output" do
+        expect_run_async(input, :output => '{"response": [1, 2]}')
+
+        workflow.run_nonblock
+
+        expect(ctx.variables).to eq("resp" => [1, 2], "n" => 5)
+        expect(ctx.state_history.first["Output"]).to eq("response" => [1, 2])
+      end
+    end
+
+    context "when the task fails" do
+      before { task["Assign"] = {"resp" => "{% $states.result %}"} }
+
+      it "fails with the task error and does not assign variables" do
+        expect_run_async(input, :error => "Custom", :cause => "Because")
+
+        workflow.run_nonblock
+
+        expect(ctx.status).to eq("failure")
+        expect(ctx.output).to eq("Error" => "Custom", "Cause" => "Because")
+        expect(ctx.variables).to eq({})
+      end
+    end
+
+    context "when an Output expression fails" do
+      before { task["Output"] = "{% $number('abc') %}" }
+
+      it "fails with States.QueryEvaluationError" do
+        expect_run_async(input, :output => nil)
+
+        workflow.run_nonblock
+
+        expect(ctx.status).to eq("failure")
+        expect(ctx.output["Error"]).to eq("States.QueryEvaluationError")
+      end
+    end
+  end
+
+  describe "TimeoutSeconds" do
+    before { task["TimeoutSeconds"] = "{% $states.input.num %}" }
+
+    it "evaluates the expression" do
+      expect_run_async(input, :running => true)
+      workflow.run_nonblock
+
+      expect(Time.parse(ctx.state["TimeoutAt"]) - Time.parse(ctx.state["EnteredTime"])).to eq(5)
+    end
+
+    it "raises States.Timeout once exceeded" do
+      expect_run_async(input, :running => true)
+
+      Timecop.travel(Time.now.utc - 20) do
+        workflow.run_nonblock
+      end
+
+      workflow.run_nonblock
+      expect(ctx.status).to eq("failure")
+      expect(ctx.output).to eq("Error" => "States.Timeout")
+    end
+
+    context "when the expression does not evaluate to a positive integer" do
+      before { task["TimeoutSeconds"] = "{% $states.input.foo.bar %}" }
+
+      it "fails the state" do
+        workflow.run_nonblock
+
+        expect(ctx.status).to eq("failure")
+        expect(ctx.output["Error"]).to eq("States.Runtime")
+      end
+    end
+  end
+
+  def expect_run_async(parameters, secrets = nil, output: :none, error: nil, cause: nil, success: nil, running: false)
+    success = error.nil? if success.nil?
+    output = {"Error" => error, "Cause" => cause}.compact.to_json if error
+    allow(mock_runner).to receive(:status!).and_return({})
+    allow(mock_runner).to receive(:running?).and_return(running)
+    allow(mock_runner).to receive(:success?).and_return(success) unless success.nil?
+    allow(mock_runner).to receive(:output).and_return(output) if output != :none
+    allow(mock_runner).to receive(:cleanup)
+
+    expect(mock_runner)
+      .to receive(:run_async!)
+      .with(resource, parameters, secrets, ctx)
+      .and_return({"container_ref" => container_ref})
+  end
+end

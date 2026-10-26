@@ -12,21 +12,35 @@ module Floe
         def initialize(workflow, name, payload)
           super
 
+          validate_query_language_fields!(
+            :jsonpath_only => %w[Result Parameters InputPath OutputPath ResultPath],
+            :jsonata_only  => %w[Arguments Output Assign]
+          )
+
           @next        = payload["Next"]
           @end         = !!payload["End"]
-          @result      = payload["Result"]
 
-          @parameters  = PayloadTemplate.new(payload["Parameters"]) if payload["Parameters"]
-          @input_path  = Path.new(payload.fetch("InputPath", "$"))
-          @output_path = Path.new(payload.fetch("OutputPath", "$"))
-          @result_path = ReferencePath.new(payload.fetch("ResultPath", "$"))
+          if jsonata?
+            parse_jsonata_fields(payload)
+          else
+            @result      = payload["Result"]
+            @parameters  = PayloadTemplate.new(payload["Parameters"]) if payload["Parameters"]
+            @input_path  = Path.new(payload.fetch("InputPath", "$"))
+            @output_path = Path.new(payload.fetch("OutputPath", "$"))
+            @result_path = ReferencePath.new(payload.fetch("ResultPath", "$"))
+          end
 
           validate_state!(workflow)
         end
 
         def finish(context)
-          input = result.nil? ? process_input(context) : result
-          context.output = process_output(context, input)
+          if jsonata?
+            # A Pass state has no $states.result
+            context.output = process_output_jsonata(context, context.input)
+          else
+            input = result.nil? ? process_input(context) : result
+            context.output = process_output(context, input)
+          end
           super
         end
 

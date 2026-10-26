@@ -10,6 +10,16 @@ module Floe
           return Errno::EAGAIN unless ready?(context)
 
           finish(context) if ended?(context)
+        rescue Floe::ExecutionError => e
+          mark_error(context, e)
+        end
+
+        # An error evaluating this state (e.g. a JSONata expression) rather than an error from a child
+        def mark_error(context, exception)
+          error = exception.to_output
+
+          retry_state!(context, error) || catch_error!(context, error) || fail_workflow!(context, error)
+          mark_finished(context)
         end
 
         def finish(context)

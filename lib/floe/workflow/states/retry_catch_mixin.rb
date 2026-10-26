@@ -37,8 +37,16 @@ module Floe
           catcher = find_catcher(error["Error"]) if error
           return if catcher.nil?
 
+          begin
+            output = catcher.process_output(context, error)
+          rescue Floe::ExecutionError => err
+            # The Output or Assign of the Catch failed to evaluate
+            fail_workflow!(context, err.to_output)
+            return true
+          end
+
           context.next_state = catcher.next
-          context.output     = catcher.result_path.set(context.input, error)
+          context.output     = output
           context.logger.info("Running state: [#{long_name}] with input [#{context.json_input}]...CatchError - next state: [#{context.next_state}] output: [#{context.json_output}]")
 
           true

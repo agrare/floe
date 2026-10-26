@@ -604,3 +604,61 @@ RSpec.describe Floe::Workflow::ChoiceRule do
     end
   end
 end
+
+RSpec.describe Floe::Workflow::ChoiceRule::Jsonata do
+  let(:input)    { {"foo" => 1} }
+  let(:ctx)      { Floe::Workflow::Context.new(:input => input.to_json) }
+  let(:workflow) { Floe::Workflow.new({"StartAt" => "Choice1", "States" => {"Choice1" => {"Type" => "Choice", "QueryLanguage" => "JSONata", "Choices" => [rule], "Default" => "Done"}, "Done" => {"Type" => "Succeed"}}}, ctx) }
+  let(:rule)     { {"Condition" => "{% $states.input.foo > 0 %}", "Next" => "Done"} }
+  let(:subject)  { workflow.states_by_name["Choice1"].choices.first }
+
+  it "is built for a JSONata state" do
+    expect(subject).to be_a(described_class)
+  end
+
+  describe "#true?" do
+    it "is true when the Condition is true" do
+      expect(subject.true?(ctx, input)).to be true
+    end
+
+    it "is false when the Condition is false" do
+      expect(subject.true?(ctx, {"foo" => -1})).to be false
+    end
+
+    it "evaluates against the given input and not the context input" do
+      ctx.state["Input"] = {"foo" => -1}
+
+      expect(subject.true?(ctx, input)).to be true
+    end
+
+    context "with a boolean literal" do
+      let(:rule) { {"Condition" => false, "Next" => "Done"} }
+
+      it { expect(subject.true?(ctx, input)).to be false }
+    end
+
+    context "with a non boolean result" do
+      let(:rule) { {"Condition" => "{% 'yes' %}", "Next" => "Done"} }
+
+      it "raises a States.QueryEvaluationError" do
+        expect { subject.true?(ctx, input) }.to raise_error(Floe::ExecutionError, /Condition.*must evaluate to a boolean/) { |err| expect(err.floe_error).to eq("States.QueryEvaluationError") }
+      end
+    end
+  end
+
+  describe "#process_output" do
+    it "defaults to the input" do
+      expect(subject.process_output(ctx, input)).to eq(input)
+      expect(ctx.variables).to eq({})
+    end
+
+    context "with Output and Assign" do
+      let(:rule) { {"Condition" => true, "Next" => "Done", "Output" => "{% $states.input.foo + 1 %}", "Assign" => {"v" => "{% $states.input.foo %}"}} }
+
+      it "returns the Output and sets the variables" do
+        expect(subject.process_output(ctx, input)).to eq(2)
+        expect(ctx.variables).to eq("v" => 1)
+      end
+    end
+  end
+end

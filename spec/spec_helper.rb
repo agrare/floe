@@ -61,6 +61,13 @@ RSpec.configure do |config|
   config.before(:each, :uses_awesome_spawn) { disable_spawning }
 
   config.include CommonMethods
+
+  # The jsonata gem requires ruby >= 3.1
+  if Gem::Version.new(RUBY_VERSION) < Gem::Version.new("3.1")
+    config.define_derived_metadata do |metadata|
+      metadata[:skip] = "JSONata requires ruby >= 3.1" if metadata[:full_description].match?(/jsonata/i)
+    end
+  end
 end
 
 require "floe"

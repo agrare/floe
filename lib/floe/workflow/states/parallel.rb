@@ -17,16 +17,26 @@ module Floe
 
           missing_field_error!("Branches") if payload["Branches"].nil?
 
+          validate_query_language_fields!(
+            :jsonpath_only => %w[Parameters InputPath OutputPath ResultPath ResultSelector],
+            :jsonata_only  => %w[Arguments Output Assign]
+          )
+
           @next            = payload["Next"]
           @end             = !!payload["End"]
-          @parameters      = PayloadTemplate.new(payload["Parameters"]) if payload["Parameters"]
-          @input_path      = Path.new(payload.fetch("InputPath", "$"))
-          @output_path     = Path.new(payload.fetch("OutputPath", "$"))
-          @result_path     = ReferencePath.new(payload.fetch("ResultPath", "$"))
-          @result_selector = PayloadTemplate.new(payload["ResultSelector"]) if payload["ResultSelector"]
-          @retry           = payload["Retry"].to_a.map { |retrier| Retrier.new(retrier) }
-          @catch           = payload["Catch"].to_a.map { |catcher| Catcher.new(catcher) }
-          @branches        = payload["Branches"].map { |branch| Branch.new(branch) }
+          @retry           = payload["Retry"].to_a.map.with_index { |retrier, i| Retrier.new(workflow, name + ["Retry", i.to_s], retrier) }
+          @catch           = payload["Catch"].to_a.map.with_index { |catcher, i| Catcher.new(workflow, name + ["Catch", i.to_s], catcher, :query_language => query_language) }
+          @branches        = payload["Branches"].map { |branch| Branch.new(branch, nil, :query_language => query_language) }
+
+          if jsonata?
+            parse_jsonata_fields(payload, :arguments => true)
+          else
+            @parameters      = PayloadTemplate.new(payload["Parameters"]) if payload["Parameters"]
+            @input_path      = Path.new(payload.fetch("InputPath", "$"))
+            @output_path     = Path.new(payload.fetch("OutputPath", "$"))
+            @result_path     = ReferencePath.new(payload.fetch("ResultPath", "$"))
+            @result_selector = PayloadTemplate.new(payload["ResultSelector"]) if payload["ResultSelector"]
+          end
 
           validate_state!(workflow)
         end

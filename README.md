@@ -313,14 +313,59 @@ Options supported by the kubernetes docker runner are:
 * `ca_file` - Path to a certificate-authority file for the kubernetes API, only valid if server and token are passed.  If present `/run/secrets/kubernetes.io/serviceaccount/ca.crt` will be used
 * `verify_ssl` - Controls if the kubernetes API certificate-authority should be verified, defaults to "true", only vaild if server and token are passed
 
+## JSONata
+
+Floe supports the [JSONata query language](https://states-language.net/#jsonata-concepts) as an alternative to JSONPath.
+
+Set `QueryLanguage` to `"JSONata"` at the top level of the workflow to use it for all states, or on individual states.  `Parallel` branches and `Map` item processors inherit the language of the state that contains them.  A state can set `"QueryLanguage": "JSONPath"` to switch back.  The default is `"JSONPath"`.
+
+```json
+{
+  "QueryLanguage": "JSONata",
+  "StartAt": "Total",
+  "States": {
+    "Total": {
+      "Type": "Pass",
+      "Assign": {"total": "{% $sum($states.input.orders.(price * qty)) %}"},
+      "Next": "Done"
+    },
+    "Done": {
+      "Type": "Succeed",
+      "Output": {"total": "{% $total %}"}
+    }
+  }
+}
+```
+
+In a JSONata state:
+- Any string of the form `{% expression %}` is evaluated as JSONata.  This works at any depth in objects and arrays.
+- `Arguments` (Task, Parallel) replaces `Parameters`, `Output` replaces `InputPath`/`ResultSelector`/`ResultPath`/`OutputPath`, and `Condition` replaces `Variable` and the comparison operators in `Choice` rules.
+- Map uses `Items` instead of `ItemsPath`.
+- `Assign` sets variables which are available as `$name` in the later states.  Variables are only visible to the expressions of states, `Parallel` branches and `Map` iterations that start after they are assigned, and changes made inside a branch or iteration are not visible outside it.
+- `$states.input` is the state input, `$states.result` is the result of a Task, Parallel or Map, `$states.errorOutput` is the error in a `Catch`, and `$states.context` is the context object.
+- Fields which only exist in JSONPath (`InputPath`, `OutputPath`, `Parameters`, `ResultPath`, `ResultSelector`, `ItemsPath`, `*Path` fields, `Variable`) are an error in a JSONata state, and so are the JSONata-only fields (`Arguments`, `Output`, `Assign`, `Items`, `Condition`) in a JSONPath state.
+- `TimeoutSeconds`, `Seconds`, `Timestamp`, `Error`, `Cause`, `MaxConcurrency`, `ToleratedFailureCount` and `ToleratedFailurePercentage` can be a JSONata expression.
+- An expression that fails to evaluate fails the state with the error `States.QueryEvaluationError`, which can be handled with `Catch`.
+
+See [examples/jsonata.asl](examples/jsonata.asl) for a complete example.
+
+JSONata requires Ruby 3.1 or newer and the [jsonata](https://github.com/Fryguy/jsonata-rb) gem.  The gem is not yet published to rubygems.org and so is not a dependency of floe's gemspec.  Applications which use JSONata must add it to their own Gemfile:
+
+```ruby
+gem "jsonata", :git => "https://github.com/Fryguy/jsonata-rb"
+```
+
+The gem is loaded the first time a `{% %}` expression is parsed, so workflows which do not use JSONata do not need it.
+
 ## Features Not Yet Supported
 
 The following are not yet supported:
 - Map State Fields:
   - ItemReader
   - ResultWriter
-- JSONata Expressions
-- Assign field
+  - ItemBatcher in a JSONata state
+- Assign field in a JSONPath state (it is supported when `QueryLanguage` is `JSONata`)
+- `HeartbeatSeconds` expressions are parsed but, as with JSONPath, `HeartbeatSeconds` has no effect
 
 ## Development
 

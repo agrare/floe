@@ -4,13 +4,19 @@ module Floe
   class WorkflowBase
     include ValidationMixin
 
-    attr_reader :name, :payload, :start_at, :states, :states_by_name
+    QUERY_LANGUAGES = %w[JSONPath JSONata].freeze
 
-    def initialize(payload, name = nil)
+    attr_reader :name, :payload, :start_at, :states, :states_by_name, :query_language
+
+    # @param query_language [String] the query language inherited from a parent workflow (default: JSONPath)
+    def initialize(payload, name = nil, query_language: nil)
       # NOTE: this is a string, and states use an array
       @name     = name || "State Machine"
       @payload  = payload
       @start_at = payload["StartAt"]
+
+      @query_language = payload["QueryLanguage"] || query_language || "JSONPath"
+      validate_query_language!
 
       # NOTE: Everywhere else we include our name (i.e.: parent name) when building the child name.
       #       When creating the states, we are dropping our name (i.e.: the workflow name)
@@ -101,6 +107,12 @@ module Floe
     # called State#finished -- which is what Context#state_finished? is detecting
     def end_workflow!(context)
       context.execution["EndTime"] = context.state["FinishedTime"]
+    end
+
+    def validate_query_language!
+      return if QUERY_LANGUAGES.include?(@query_language)
+
+      invalid_field_error!("QueryLanguage", @query_language, "must be one of #{QUERY_LANGUAGES.map { |l| "\"#{l}\"" }.join(", ")}")
     end
 
     def validate_workflow!

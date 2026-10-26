@@ -6,8 +6,10 @@ module Floe
       include ValidationMixin
 
       class << self
-        def build(workflow, name, payload)
-          if (sub_payloads = payload["Not"])
+        def build(workflow, name, payload, query_language: "JSONPath")
+          if query_language == "JSONata"
+            Floe::Workflow::ChoiceRule::Jsonata.new(workflow, name, payload)
+          elsif (sub_payloads = payload["Not"])
             name += ["Not"]
             Floe::Workflow::ChoiceRule::Not.new(workflow, name, payload, build_children(workflow, name, [sub_payloads]))
           elsif (sub_payloads = payload["And"])

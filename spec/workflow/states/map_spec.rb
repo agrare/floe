@@ -457,3 +457,288 @@ RSpec.describe Floe::Workflow::States::Map do
     end
   end
 end
+
+RSpec.describe Floe::Workflow::States::Map, "with QueryLanguage JSONata" do
+  let(:input)    { {"colors" => %w[red green blue], "partner" => "ACME"} }
+  let(:ctx)      { Floe::Workflow::Context.new(:input => input.to_json) }
+  let(:workflow) { make_workflow(ctx, payload) }
+  let(:processor_states) { {"Validate" => {"Type" => "Pass", "End" => true}} }
+  let(:map) do
+    {
+      "Type"          => "Map",
+      "QueryLanguage" => "JSONata",
+      "Items"         => "{% $states.input.colors %}",
+      "ItemProcessor" => {"StartAt" => "Validate", "States" => processor_states},
+      "End"           => true
+    }
+  end
+  let(:payload) { {"MapState" => map} }
+
+  def run_workflow
+    workflow.run_nonblock
+    workflow
+  end
+
+  describe "#initialize" do
+    %w[ItemsPath InputPath OutputPath ResultPath ResultSelector Parameters].each do |field|
+      context "with #{field}" do
+        before { map[field] = "$" }
+
+        it { expect { workflow }.to raise_error(Floe::InvalidWorkflowError, "States.MapState field \"#{field}\" is not allowed when QueryLanguage is \"JSONata\"") }
+      end
+    end
+
+    context "with Items in a JSONPath state" do
+      let(:map) { {"Type" => "Map", "Items" => [], "ItemProcessor" => {"StartAt" => "A", "States" => {"A" => {"Type" => "Succeed"}}}, "End" => true} }
+
+      it { expect { workflow }.to raise_error(Floe::InvalidWorkflowError, "States.MapState field \"Items\" is not allowed when QueryLanguage is \"JSONPath\"") }
+    end
+
+    context "with ItemBatcher" do
+      before { map["ItemBatcher"] = {"MaxItemsPerBatch" => 1} }
+
+      it { expect { workflow }.to raise_error(Floe::InvalidWorkflowError, /field "ItemBatcher" is not supported/) }
+    end
+
+    context "with Items that is not an array or an expression" do
+      before { map["Items"] = "$.colors" }
+
+      it { expect { workflow }.to raise_error(Floe::InvalidWorkflowError, /field "Items" value "\$.colors" must be an array or a JSONata expression/) }
+    end
+
+    context "with a static MaxConcurrency of 0" do
+      before { map["MaxConcurrency"] = 0 }
+
+      it { expect { workflow }.to raise_error(Floe::InvalidWorkflowError, /field "MaxConcurrency" value "0" must be greater than 0/) }
+    end
+
+    context "with a MaxConcurrency expression" do
+      before { map["MaxConcurrency"] = "{% 2 %}" }
+
+      it { expect { workflow }.not_to raise_error }
+    end
+
+    context "with an invalid ItemSelector expression" do
+      before { map["ItemSelector"] = {"a" => "{% ( %}"} }
+
+      it { expect { workflow }.to raise_error(Floe::InvalidWorkflowError, /Invalid JSONata expression/) }
+    end
+
+    context "with an Arguments field" do
+      before { map["Arguments"] = {} }
+
+      it { expect { workflow }.to raise_error(Floe::InvalidWorkflowError, /field "Arguments" is not supported/) }
+    end
+  end
+
+  describe "Items" do
+    it "runs the ItemProcessor for each item and defaults the output to the results" do
+      expect(run_workflow.output).to eq(%w[red green blue].to_json)
+    end
+
+    context "with a literal array" do
+      before { map["Items"] = [1, 2] }
+
+      it { expect(run_workflow.output).to eq("[1,2]") }
+    end
+
+    context "with an expression which builds the array" do
+      before { map["Items"] = "{% $states.input.colors.$uppercase($) %}" }
+
+      it { expect(run_workflow.output).to eq(%w[RED GREEN BLUE].to_json) }
+    end
+
+    context "without Items" do
+      let(:input) { [1, 2, 3] }
+
+      before { map.delete("Items") }
+
+      it "uses the state input" do
+        expect(run_workflow.output).to eq("[1,2,3]")
+      end
+    end
+
+    context "with an Items expression which is not an array" do
+      before { map["Items"] = "{% $states.input.partner %}" }
+
+      it "fails with States.QueryEvaluationError" do
+        run_workflow
+
+        expect(ctx.status).to eq("failure")
+        expect(ctx.output["Error"]).to eq("States.QueryEvaluationError")
+      end
+    end
+  end
+
+  describe "ItemSelector" do
+    before do
+      map["ItemSelector"] = {
+        "index"   => "{% $states.context.Map.Item.Index %}",
+        "value"   => "{% $states.context.Map.Item.Value %}",
+        "partner" => "{% $states.input.partner %}",
+        "static"  => 1
+      }
+    end
+
+    it "can use the item context and the state input" do
+      expect(JSON.parse(run_workflow.output)).to eq(
+        [
+          {"index" => 0, "value" => "red", "partner" => "ACME", "static" => 1},
+          {"index" => 1, "value" => "green", "partner" => "ACME", "static" => 1},
+          {"index" => 2, "value" => "blue", "partner" => "ACME", "static" => 1}
+        ]
+      )
+    end
+  end
+
+  describe "ItemProcessor" do
+    let(:processor_states) do
+      {"Validate" => {"Type" => "Pass", "End" => true, "Output" => {"color" => "{% $states.input %}", "prefix" => "{% $prefix %}"}}}
+    end
+
+    before { ctx.variables["prefix"] = "pre" }
+
+    it "inherits the QueryLanguage and can read the variables of the parent" do
+      expect(JSON.parse(run_workflow.output)).to eq(
+        [
+          {"color" => "red", "prefix" => "pre"},
+          {"color" => "green", "prefix" => "pre"},
+          {"color" => "blue", "prefix" => "pre"}
+        ]
+      )
+    end
+
+    context "when the ItemProcessor assigns variables" do
+      let(:processor_states) { {"Validate" => {"Type" => "Pass", "End" => true, "Assign" => {"prefix" => "child"}}} }
+
+      it "does not change the variables of the parent" do
+        run_workflow
+
+        expect(ctx.variables).to eq("prefix" => "pre")
+      end
+    end
+
+    context "with a JSONPath ItemProcessor" do
+      let(:processor_states) { {"Validate" => {"Type" => "Pass", "End" => true, "QueryLanguage" => "JSONPath", "Parameters" => {"c.$" => "$"}}} }
+
+      it "uses the language of the nested state" do
+        expect(JSON.parse(run_workflow.output)).to eq([{"c" => "red"}, {"c" => "green"}, {"c" => "blue"}])
+      end
+    end
+  end
+
+  describe "Output and Assign" do
+    before do
+      map["Output"] = {"count" => "{% $count($states.result) %}", "first" => "{% $states.result[0] %}", "in" => "{% $states.input.partner %}"}
+      map["Assign"] = {"results" => "{% $states.result %}"}
+    end
+
+    it "can use $states.result" do
+      run_workflow
+
+      expect(JSON.parse(workflow.output)).to eq("count" => 3, "first" => "red", "in" => "ACME")
+      expect(ctx.variables).to eq("results" => %w[red green blue])
+    end
+  end
+
+  describe "MaxConcurrency" do
+    before { map["MaxConcurrency"] = "{% 1 %}" }
+
+    it "evaluates the expression" do
+      expect(run_workflow.output).to eq(%w[red green blue].to_json)
+    end
+
+    context "with an expression which is not a positive integer" do
+      before { map["MaxConcurrency"] = "{% 'a' %}" }
+
+      it "fails the state" do
+        run_workflow
+
+        expect(ctx.status).to eq("failure")
+        expect(ctx.output["Error"]).to eq("States.QueryEvaluationError")
+      end
+    end
+  end
+
+  describe "ToleratedFailureCount and ToleratedFailurePercentage" do
+    let(:processor_states) { {"Validate" => {"Type" => "Fail", "Error" => "Nope"}} }
+
+    context "without tolerance" do
+      it "fails with the child error" do
+        run_workflow
+
+        expect(ctx.status).to eq("failure")
+        expect(ctx.output).to eq("Error" => "Nope")
+      end
+    end
+
+    context "with a ToleratedFailureCount expression that is exceeded" do
+      before { map["ToleratedFailureCount"] = "{% 2 %}" }
+
+      it "fails with States.ExceedToleratedFailureThreshold" do
+        run_workflow
+
+        expect(ctx.output).to eq("Error" => "States.ExceedToleratedFailureThreshold")
+      end
+    end
+
+    context "with a ToleratedFailureCount expression that is not exceeded" do
+      before { map["ToleratedFailureCount"] = "{% $count($states.input.colors) + 1 %}" }
+
+      it "succeeds" do
+        run_workflow
+
+        expect(ctx.status).to eq("success")
+      end
+    end
+
+    context "with a ToleratedFailurePercentage expression" do
+      before { map["ToleratedFailurePercentage"] = 100 }
+
+      it "succeeds" do
+        run_workflow
+
+        expect(ctx.status).to eq("success")
+      end
+    end
+
+    context "with an expression which is not valid" do
+      before { map["ToleratedFailureCount"] = "{% -1 %}" }
+
+      it "fails with States.QueryEvaluationError" do
+        run_workflow
+
+        expect(ctx.output["Error"]).to eq("States.QueryEvaluationError")
+      end
+    end
+  end
+
+  describe "Catch" do
+    let(:payload) { {"MapState" => map.merge("End" => nil, "Next" => "Recover", "Catch" => catchers), "Recover" => {"Type" => "Pass", "QueryLanguage" => "JSONata", "End" => true}} }
+    let(:catchers) { [{"ErrorEquals" => ["Nope"], "Next" => "Recover", "Output" => {"caught" => "{% $states.errorOutput.Error %}"}, "Assign" => {"err" => "{% $states.errorOutput %}"}}] }
+    let(:processor_states) { {"Validate" => {"Type" => "Fail", "Error" => "Nope"}} }
+
+    it "uses Output and Assign of the catcher" do
+      run_workflow
+
+      expect(ctx.status).to eq("success")
+      expect(JSON.parse(workflow.output)).to eq("caught" => "Nope")
+      expect(ctx.variables).to eq("err" => {"Error" => "Nope"})
+    end
+  end
+
+  describe "Retry" do
+    let(:processor_states) { {"Validate" => {"Type" => "Fail", "Error" => "Nope"}} }
+
+    before { map["Retry"] = [{"ErrorEquals" => ["Nope"], "MaxAttempts" => 1, "IntervalSeconds" => 30}] }
+
+    it "retries the state until MaxAttempts is exceeded" do
+      workflow.run_nonblock
+
+      expect(ctx.state["Retrier"]).to eq(["Nope"])
+      expect(ctx.state_history.count).to eq(2)
+      expect(ctx.status).to eq("failure")
+      expect(ctx.output).to eq("Error" => "Nope")
+    end
+  end
+end

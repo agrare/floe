@@ -20,6 +20,7 @@ module Floe
         self["StateHistory"]       ||= []
         self["StateMachine"]       ||= {}
         self["Task"]               ||= {}
+        self["Variables"]          ||= {}
 
         self.logger = logger if logger
       rescue JSON::ParserError => err
@@ -148,6 +149,29 @@ module Floe
         @context["Task"]
       end
 
+      # Variables set with Assign (JSONata query language)
+      def variables
+        @context["Variables"]
+      end
+
+      # The bindings made available to JSONata expressions: the workflow variables
+      # plus the reserved $states variable.
+      #
+      # @param input [Object] the value of $states.input
+      # @param options [Hash] optionally :result ($states.result) and/or :error_output ($states.errorOutput).
+      #   These are only defined in the bindings when passed, so that they are undefined (not null) otherwise.
+      # @return [Hash]
+      def states_bindings(input, **options)
+        states = {
+          "input"   => input,
+          "context" => @context.except("Credentials", "Variables", "StateHistory")
+        }
+        states["result"]      = options[:result]       if options.key?(:result)
+        states["errorOutput"] = options[:error_output] if options.key?(:error_output)
+
+        variables.merge("states" => states)
+      end
+
       def [](key)
         @context[key]
       end
@@ -174,7 +198,8 @@ module Floe
           .deep_dup
           .merge("Input" => input)
 
-        self.class.new({"Execution" => child_execution})
+        # Child workflows can read, but not modify, the variables of their parent.
+        self.class.new({"Execution" => child_execution, "Variables" => variables.deep_dup})
       end
 
       def inspect
