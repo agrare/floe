@@ -11,7 +11,7 @@ Gem::Specification.new do |spec|
   spec.description = spec.summary
   spec.homepage = "https://github.com/ManageIQ/floe"
   spec.licenses = ["Apache-2.0"]
-  spec.required_ruby_version = ">= 3.0.0"
+  spec.required_ruby_version = ">= 3.1.0"
 
   spec.metadata["allowed_push_host"] = "https://rubygems.org"
   spec.metadata['rubygems_mfa_required'] = "true"
@@ -38,6 +38,7 @@ Gem::Specification.new do |spec|
   spec.add_dependency "faraday-follow_redirects"
   spec.add_dependency "io-wait", ">= 0.3.6", "< 0.5.0"
   spec.add_dependency "json", "~>2.10"
+  spec.add_dependency "jsonata", "~>2.2"
   spec.add_dependency "jsonpath", "~>1.1"
   spec.add_dependency "kubeclient", "~>4.7"
   spec.add_dependency "optimist", "~>3.0"
