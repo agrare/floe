@@ -123,6 +123,45 @@ RSpec.describe Floe::Workflow::States::Map do
       expect { make_workflow(ctx, payload) }
         .to raise_error(Floe::InvalidWorkflowError, "States.Validate-All field \"MaxConcurrency\" value \"0\" must be greater than 0")
     end
+
+    context "with Retry and Catch" do
+      let(:payload) do
+        {
+          "Validate-All" => {
+            "Type"          => "Map",
+            "ItemProcessor" => {
+              "StartAt" => "Validate",
+              "States"  => {"Validate" => {"Type" => "Succeed"}}
+            },
+            "Retry"         => [{"ErrorEquals" => ["States.Timeout"]}],
+            "Catch"         => [{"ErrorEquals" => ["States.ALL"], "Next" => "Recover"}],
+            "End"           => true
+          },
+          "Recover"      => {"Type" => "Succeed"}
+        }
+      end
+
+      it "builds the Retrier and Catcher objects" do
+        state = make_workflow(ctx, payload).start_workflow.current_state
+
+        expect(state.retry.map(&:error_equals)).to eq([["States.Timeout"]])
+        expect(state.catch.map(&:next)).to eq(["Recover"])
+      end
+
+      it "raises an InvalidWorkflowError with a Catch Next that is not found" do
+        payload["Validate-All"]["Catch"].first["Next"] = "Missing"
+
+        expect { make_workflow(ctx, payload) }
+          .to raise_error(Floe::InvalidWorkflowError, "States.Validate-All.Catch.0 field \"Next\" value \"Missing\" is not found in \"States\"")
+      end
+
+      it "raises an InvalidWorkflowError with a Retry missing ErrorEquals" do
+        payload["Validate-All"]["Retry"] = [{}]
+
+        expect { make_workflow(ctx, payload) }
+          .to raise_error(Floe::InvalidWorkflowError, "States.Validate-All.Retry.0 does not have required field \"ErrorEquals\"")
+      end
+    end
   end
 
   it "#end?" do

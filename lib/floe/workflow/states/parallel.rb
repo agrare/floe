@@ -24,8 +24,8 @@ module Floe
           @output_path     = Path.new(payload.fetch("OutputPath", "$"))
           @result_path     = ReferencePath.new(payload.fetch("ResultPath", "$"))
           @result_selector = PayloadTemplate.new(payload["ResultSelector"]) if payload["ResultSelector"]
-          @retry           = payload["Retry"].to_a.map { |retrier| Retrier.new(retrier) }
-          @catch           = payload["Catch"].to_a.map { |catcher| Catcher.new(catcher) }
+          @retry           = payload["Retry"].to_a.map.with_index { |retrier, i| Retrier.new(workflow, name + ["Retry", i.to_s], retrier) }
+          @catch           = payload["Catch"].to_a.map.with_index { |catcher, i| Catcher.new(workflow, name + ["Catch", i.to_s], catcher) }
           @branches        = payload["Branches"].map { |branch| Branch.new(branch) }
 
           validate_state!(workflow)

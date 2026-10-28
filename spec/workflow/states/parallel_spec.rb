@@ -147,6 +147,42 @@ RSpec.describe Floe::Workflow::States::Parallel do
       expect { make_workflow(ctx, payload) }
         .to raise_error(Floe::InvalidWorkflowError, "States.Add field \"Next\" value \"Subtract\" is not found in \"States\"")
     end
+
+    context "with Retry and Catch" do
+      let(:payload) do
+        {
+          "FunWithMath" => {
+            "Type"     => "Parallel",
+            "Branches" => [{"StartAt" => "Add", "States" => {"Add" => {"Type" => "Succeed"}}}],
+            "Retry"    => [{"ErrorEquals" => ["States.Timeout"]}],
+            "Catch"    => [{"ErrorEquals" => ["States.ALL"], "Next" => "Recover"}],
+            "End"      => true
+          },
+          "Recover"     => {"Type" => "Succeed"}
+        }
+      end
+
+      it "builds the Retrier and Catcher objects" do
+        state = make_workflow(ctx, payload).start_workflow.current_state
+
+        expect(state.retry.map(&:error_equals)).to eq([["States.Timeout"]])
+        expect(state.catch.map(&:next)).to eq(["Recover"])
+      end
+
+      it "raises an InvalidWorkflowError with a Catch Next that is not found" do
+        payload["FunWithMath"]["Catch"].first["Next"] = "Missing"
+
+        expect { make_workflow(ctx, payload) }
+          .to raise_error(Floe::InvalidWorkflowError, "States.FunWithMath.Catch.0 field \"Next\" value \"Missing\" is not found in \"States\"")
+      end
+
+      it "raises an InvalidWorkflowError with a Retry missing ErrorEquals" do
+        payload["FunWithMath"]["Retry"] = [{}]
+
+        expect { make_workflow(ctx, payload) }
+          .to raise_error(Floe::InvalidWorkflowError, "States.FunWithMath.Retry.0 does not have required field \"ErrorEquals\"")
+      end
+    end
   end
 
   it "#end?" do
