@@ -256,6 +256,45 @@ RSpec.describe Floe::Workflow::States::Parallel do
       loop while state.run_nonblock!(ctx) != 0
       expect(ctx.output).to eq([5, 2])
     end
+
+    context "with errors processing the input or output" do
+      let(:input)    { {"foo" => "bar"} }
+      let(:branches) { [{"StartAt" => "Pass", "States" => {"Pass" => {"Type" => "Pass", "End" => true}}}] }
+      let(:workflow) { make_workflow(ctx, "Parallel" => parallel_state.merge("Type" => "Parallel", "Branches" => branches, "End" => true)) }
+
+      def run_to_end
+        workflow.start_workflow
+        workflow.step_nonblock until ctx.ended?
+      end
+
+      context "with a Parameters Path that references a missing value" do
+        let(:parallel_state) { {"Parameters" => {"foo.$" => "$.missing"}} }
+
+        it "fails with States.ParameterPathFailure" do
+          run_to_end
+          expect(ctx.output).to eq("Error" => "States.ParameterPathFailure", "Cause" => "Path [$.missing] references an invalid value")
+        end
+      end
+
+      context "with a ResultSelector Path that references a missing value" do
+        let(:parallel_state) { {"ResultSelector" => {"foo.$" => "$.missing"}} }
+
+        it "fails with States.ParameterPathFailure" do
+          run_to_end
+          expect(ctx.output).to eq("Error" => "States.ParameterPathFailure", "Cause" => "Path [$.missing] references an invalid value")
+        end
+      end
+
+      context "with a ResultPath that cannot be applied to the input" do
+        let(:input)          { "foo" }
+        let(:parallel_state) { {"ResultPath" => "$.x"} }
+
+        it "fails with States.ResultPathMatchFailure" do
+          run_to_end
+          expect(ctx.output).to eq("Error" => "States.ResultPathMatchFailure", "Cause" => "Path [$.x] cannot be applied to the input")
+        end
+      end
+    end
   end
 
   describe "#ready?" do

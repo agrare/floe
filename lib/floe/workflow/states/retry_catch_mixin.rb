@@ -42,6 +42,17 @@ module Floe
           context.logger.info("Running state: [#{long_name}] with input [#{context.json_input}]...CatchError - next state: [#{context.next_state}] output: [#{context.json_output}]")
 
           true
+        rescue Floe::ExecutionError => err
+          # The Catcher's ResultPath could not be applied, so the workflow fails with that error
+          fail_workflow!(context, err.to_output)
+          true
+        end
+
+        def mark_error(context, exception)
+          error = exception.to_output
+
+          retry_state!(context, error) || catch_error!(context, error) || fail_workflow!(context, error)
+          mark_finished(context)
         end
 
         def fail_workflow!(context, error)

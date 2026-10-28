@@ -114,5 +114,48 @@ RSpec.describe Floe::Workflow::ReferencePath do
         expect(subject.set(input, 6)).to eq("master" => {"detail" => [1, 2, 3], "result" => {"sum" => 6}})
       end
     end
+
+    context "when the path cannot be applied to the input" do
+      let(:payload) { "$.x" }
+
+      [
+        ["a string",  "foo"],
+        ["a number",  5],
+        ["a boolean", true],
+        ["null",      nil],
+        ["an array",  [1]]
+      ].each do |description, value|
+        context "with #{description} as the input" do
+          let(:input) { value }
+
+          it "raises States.ResultPathMatchFailure" do
+            expect { subject.set(input, 6) }.to raise_error(Floe::ExecutionError, "Path [$.x] cannot be applied to the input") { |err| expect(err.floe_error).to eq("States.ResultPathMatchFailure") }
+          end
+        end
+      end
+
+      context "with an intermediate value that is not an object" do
+        let(:payload) { "$.a.b" }
+
+        [["a number", 5], ["a string", "s"], ["an array", [1]]].each do |description, value|
+          context "with #{description}" do
+            let(:input) { {"a" => value} }
+
+            it "raises States.ResultPathMatchFailure" do
+              expect { subject.set(input, 6) }.to raise_error(Floe::ExecutionError, "Path [$.a.b] cannot be applied to the input") { |err| expect(err.floe_error).to eq("States.ResultPathMatchFailure") }
+            end
+          end
+        end
+      end
+
+      context "with an intermediate null value" do
+        let(:payload) { "$.a.b" }
+        let(:input)   { {"a" => nil} }
+
+        it "creates the intermediate object" do
+          expect(subject.set(input, 6)).to eq("a" => {"b" => 6})
+        end
+      end
+    end
   end
 end

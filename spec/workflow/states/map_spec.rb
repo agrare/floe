@@ -169,6 +169,27 @@ RSpec.describe Floe::Workflow::States::Map do
       end
     end
 
+    context "with an ItemSelector Path that references a missing value" do
+      let(:input) { %w[red green] }
+      let(:workflow) do
+        payload = {
+          "Validate-All" => {
+            "Type"          => "Map",
+            "ItemSelector"  => {"foo.$" => "$.missing"},
+            "ItemProcessor" => {"StartAt" => "Validate", "States" => {"Validate" => {"Type" => "Pass", "End" => true}}},
+            "End"           => true
+          }
+        }
+        make_workflow(ctx, payload)
+      end
+
+      it "fails with States.ParameterPathFailure" do
+        loop while state.run_nonblock!(ctx) != 0
+        expect(ctx).to be_failed
+        expect(ctx.output).to eq("Error" => "States.ParameterPathFailure", "Cause" => "Path [$.missing] references an invalid value")
+      end
+    end
+
     context "with an ItemSelector" do
       let(:input) { {"delivery-partner" => "ACME", "colors" => ["red", "green", "blue"]} }
       let(:workflow) do

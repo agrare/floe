@@ -10,6 +10,8 @@ module Floe
           return Errno::EAGAIN unless ready?(context)
 
           finish(context) if ended?(context)
+        rescue Floe::ExecutionError => e
+          mark_error(context, e)
         end
 
         def finish(context)

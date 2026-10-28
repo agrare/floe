@@ -84,6 +84,13 @@ module Floe
       def interpolate_dynamic_value(value, context, inputs)
         # value will be a Path or IntrinsicFunction
         value.value(context, inputs)
+      rescue Floe::PathError => err
+        error_name = value.kind_of?(IntrinsicFunction) ? "States.IntrinsicFailure" : "States.ParameterPathFailure"
+        raise Floe::ExecutionError.new(err.message, error_name)
+      rescue ArgumentError => err
+        raise unless value.kind_of?(IntrinsicFunction)
+
+        raise Floe::ExecutionError.new(err.message, "States.IntrinsicFailure")
       end
     end
   end

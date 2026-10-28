@@ -175,6 +175,37 @@ RSpec.describe Floe::Workflow::States::Pass do
       end
     end
 
+    context "With a Parameters Path that references a missing value" do
+      let(:payload) { {"PassState" => {"Type" => "Pass", "End" => true, "Parameters" => {"foo.$" => "$.missing"}}} }
+
+      it "completes with a States.ParameterPathFailure error" do
+        workflow.run_nonblock
+        expect(ctx.state_finished?).to eq(true)
+        expect(ctx.output).to eq({"Cause" => "Path [$.missing] references an invalid value", "Error" => "States.ParameterPathFailure"})
+      end
+    end
+
+    context "With a Parameters Intrinsic Function that fails" do
+      let(:payload) { {"PassState" => {"Type" => "Pass", "End" => true, "Parameters" => {"foo.$" => "States.MathAdd('a', 1)"}}} }
+
+      it "completes with a States.IntrinsicFailure error" do
+        workflow.run_nonblock
+        expect(ctx.state_finished?).to eq(true)
+        expect(ctx.output).to eq({"Cause" => "wrong type for argument 1 to States.MathAdd (given String, expected Integer)", "Error" => "States.IntrinsicFailure"})
+      end
+    end
+
+    context "With a ResultPath that cannot be applied to the input" do
+      let(:input)   { "foo" }
+      let(:payload) { {"PassState" => {"Type" => "Pass", "End" => true, "Result" => 1, "ResultPath" => "$.x"}} }
+
+      it "completes with a States.ResultPathMatchFailure error" do
+        workflow.run_nonblock
+        expect(ctx.state_finished?).to eq(true)
+        expect(ctx.output).to eq({"Cause" => "Path [$.x] cannot be applied to the input", "Error" => "States.ResultPathMatchFailure"})
+      end
+    end
+
     context "With a missing OutputPath" do
       let(:payload) do
         {

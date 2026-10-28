@@ -469,6 +469,28 @@ RSpec.describe Floe::Workflow::States::Task do
     end
 
     describe "Catch" do
+      context "with a ResultPath that cannot be applied to the input" do
+        let(:input)    { "foo" }
+        let(:catchers) { [{"ErrorEquals" => ["States.ALL"], "ResultPath" => "$.error", "Next" => "FirstState"}] }
+        let(:workflow) do
+          make_workflow(
+            ctx, {
+              "State"      => {"Type" => "Task", "Resource" => resource, "Catch" => catchers, "End" => true},
+              "FirstState" => {"Type" => "Succeed"}
+            }
+          )
+        end
+
+        it "fails with States.ResultPathMatchFailure" do
+          expect_run_async(input, :error => "Exception")
+
+          workflow.run_nonblock
+
+          expect(ctx.status).to eq("failure")
+          expect(ctx.output).to eq("Error" => "States.ResultPathMatchFailure", "Cause" => "Path [$.error] cannot be applied to the input")
+        end
+      end
+
       context "with specific errors" do
         let(:catchers) { [{"ErrorEquals" => ["States.Timeout"], "Next" => "FirstState"}] }
         let(:workflow) do
