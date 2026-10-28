@@ -578,6 +578,55 @@ RSpec.describe Floe::Workflow::ChoiceRule do
         end
       end
 
+      timestamp_ops = %w[Equals LessThan GreaterThan LessThanEquals GreaterThanEquals]
+
+      # [description, value, Equals, LessThan, GreaterThan, LessThanEquals, GreaterThanEquals] compared to 2016-03-14T01:59:00Z
+      [
+        ["the same instant",                                  "2016-03-14T01:59:00Z",      true,  false, false, true,  true],
+        ["the same instant with a numeric offset",            "2016-03-14T02:59:00+01:00", true,  false, false, true,  true],
+        ["an earlier instant",                                "2016-03-14T01:58:59Z",      false, true,  false, true,  false],
+        ["a later instant",                                   "2016-03-14T01:59:01Z",      false, false, true,  false, true],
+        ["an earlier instant with a later-looking local time", "2016-03-14T02:00:00+02:00", false, true,  false, true,  false],
+        ["a later instant with an earlier-looking local time", "2016-03-13T23:59:01-02:00", false, false, true,  false, true]
+      ].each do |description, value, *expected|
+        timestamp_ops.zip(expected).each do |op, expectation|
+          context "with Timestamp#{op} and #{description}" do
+            let(:choices) { [{"Variable" => "$.foo", "Timestamp#{op}" => "2016-03-14T01:59:00Z", "Next" => "FirstMatchState"}] }
+            let(:input)   { {"foo" => value} }
+
+            it { expect(subject).to eq(expectation) }
+          end
+        end
+      end
+
+      timestamp_ops.each do |op|
+        context "with Timestamp#{op} and a value that is not a timestamp" do
+          let(:choices) { [{"Variable" => "$.foo", "Timestamp#{op}" => "2016-03-14T01:59:00Z", "Next" => "FirstMatchState"}] }
+          let(:input)   { {"foo" => "bar"} }
+
+          it { expect { subject }.to raise_exception(Floe::ExecutionError, /required to point to a Timestamp/) }
+        end
+      end
+
+      context "with a TimestampLessThanPath" do
+        let(:choices) { [{"Variable" => "$.foo", "TimestampLessThanPath" => "$.bar", "Next" => "FirstMatchState"}] }
+
+        context "that is true across offsets" do
+          let(:input) { {"foo" => "2016-03-14T01:00:00-02:00", "bar" => "2016-03-14T04:00:00Z"} }
+          it { expect(subject).to eq(true) }
+        end
+
+        context "that is false across offsets" do
+          let(:input) { {"foo" => "2016-03-14T01:00:00-05:00", "bar" => "2016-03-14T04:00:00Z"} }
+          it { expect(subject).to eq(false) }
+        end
+
+        context "with a path that is not a timestamp" do
+          let(:input) { {"foo" => "2016-03-14T01:00:00Z", "bar" => 5} }
+          it { expect { subject }.to raise_exception(Floe::ExecutionError, /required to point to a Timestamp/) }
+        end
+      end
+
       context "with a StringMatches" do
         let(:choices) { [{"Variable" => "$.foo", "StringMatches" => "*.log", "Next" => "FirstMatchState"}] }
 
@@ -599,6 +648,140 @@ RSpec.describe Floe::Workflow::ChoiceRule do
         context "that references a number" do
           let(:input) { {"foo" => 5} }
           it { expect { subject }.to raise_exception(Floe::ExecutionError, "States.Choice1.Choices.0.Data field \"Variable\" value \"$.foo\" required to point to a String") }
+        end
+      end
+
+      context "with a StringMatches pattern" do
+        let(:choices) { [{"Variable" => "$.foo", "StringMatches" => pattern, "Next" => "FirstMatchState"}] }
+        let(:input)   { {"foo" => value} }
+
+        context "without a wildcard" do
+          let(:pattern) { "audit" }
+
+          context "with an exact match" do
+            let(:value) { "audit" }
+            it { expect(subject).to eq(true) }
+          end
+
+          context "with a longer value" do
+            let(:value) { "audit.log" }
+            it { expect(subject).to eq(false) }
+          end
+
+          context "with a value with a prefix" do
+            let(:value) { "an audit" }
+            it { expect(subject).to eq(false) }
+          end
+        end
+
+        context "with a trailing wildcard" do
+          let(:pattern) { "foo*" }
+
+          context "with a matching prefix" do
+            let(:value) { "foo23.log" }
+            it { expect(subject).to eq(true) }
+          end
+
+          context "with the wildcard matching nothing" do
+            let(:value) { "foo" }
+            it { expect(subject).to eq(true) }
+          end
+
+          context "with a non-matching prefix" do
+            let(:value) { "xfoo" }
+            it { expect(subject).to eq(false) }
+          end
+        end
+
+        context "with a leading wildcard" do
+          let(:pattern) { "*.log" }
+
+          context "with a matching suffix" do
+            let(:value) { "zebra.log" }
+            it { expect(subject).to eq(true) }
+          end
+
+          context "with a non-matching suffix" do
+            let(:value) { "zebra.log.bak" }
+            it { expect(subject).to eq(false) }
+          end
+        end
+
+        context "with multiple wildcards" do
+          let(:pattern) { "foo*.*" }
+
+          context "with a matching value" do
+            let(:value) { "foobar.zebra" }
+            it { expect(subject).to eq(true) }
+          end
+
+          context "with a non-matching value" do
+            let(:value) { "foobar" }
+            it { expect(subject).to eq(false) }
+          end
+        end
+
+        context "with regexp special characters" do
+          let(:pattern) { "a.c" }
+
+          context "with the literal characters" do
+            let(:value) { "a.c" }
+            it { expect(subject).to eq(true) }
+          end
+
+          context "with other characters in place of the special character" do
+            let(:value) { "abc" }
+            it { expect(subject).to eq(false) }
+          end
+        end
+
+        context "with a value containing a newline" do
+          let(:pattern) { "foo*" }
+          let(:value)   { "foo\nbar" }
+          it { expect(subject).to eq(true) }
+        end
+
+        context "with an escaped wildcard" do
+          let(:pattern) { "a\\*b" }
+
+          context "with a literal asterisk" do
+            let(:value) { "a*b" }
+            it { expect(subject).to eq(true) }
+          end
+
+          context "with other characters in place of the asterisk" do
+            let(:value) { "axxb" }
+            it { expect(subject).to eq(false) }
+          end
+        end
+
+        context "with an escaped backslash" do
+          let(:pattern) { "a\\\\b" }
+
+          context "with a literal backslash" do
+            let(:value) { "a\\b" }
+            it { expect(subject).to eq(true) }
+          end
+
+          context "with other characters in place of the backslash" do
+            let(:value) { "axb" }
+            it { expect(subject).to eq(false) }
+          end
+        end
+
+        context "with an escaped backslash followed by a wildcard" do
+          let(:pattern) { "a\\\\*" }
+          let(:value)   { "a\\anything" }
+          it { expect(subject).to eq(true) }
+        end
+
+        context "with an open escape character" do
+          let(:pattern) { "foo\\" }
+          let(:value)   { "foo" }
+
+          it "raises a runtime error" do
+            expect { subject }.to raise_exception(Floe::ExecutionError, /StringMatches.*must not end with an open escape character/)
+          end
         end
       end
     end

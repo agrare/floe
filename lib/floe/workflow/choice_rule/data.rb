@@ -50,6 +50,7 @@ module Floe
           #       See the exception handler below. This is why we process the rhs before the lhs.
           rhs = compare_value(context, input)
           lhs = variable_value(context, input)
+          lhs, rhs = parse_timestamps(lhs, rhs) if timestamp_comparison?
           send(OPERATIONS[operator], lhs, rhs)
         rescue Floe::PathError
           # For IsPresent, we can expect the lhs to not be present in some cases,
@@ -121,7 +122,48 @@ module Floe
         end
 
         def op_matches?(value, pattern)
-          value.match?(Regexp.escape(pattern).gsub('\*', '.*?'))
+          string_matches_regexp(pattern).match?(value)
+        end
+
+        # Convert a StringMatches pattern to an anchored Regexp.
+        #
+        # An asterisk matches zero or more characters, a backslash followed by an
+        # asterisk is a literal asterisk, and two backslashes are a literal backslash.
+        # No other characters have special meaning.
+        def string_matches_regexp(pattern)
+          regexp = +""
+          chars  = pattern.each_char
+
+          loop do
+            char = chars.next
+            case char
+            when "*"
+              regexp << ".*"
+            when "\\"
+              escaped = begin
+                chars.next
+              rescue StopIteration
+                runtime_field_error!(compare_key, pattern, "must not end with an open escape character (\\)")
+              end
+              regexp << Regexp.escape(escaped)
+            else
+              regexp << Regexp.escape(char)
+            end
+          end
+
+          Regexp.new("\\A#{regexp}\\z", Regexp::MULTILINE)
+        end
+
+        def timestamp_comparison?
+          type == "Timestamp"
+        end
+
+        # Timestamps must be compared as points in time, not as strings, since
+        # the same instant can be written with different offsets.
+        def parse_timestamps(*values)
+          require "date"
+
+          values.map { |value| DateTime.rfc3339(value) }
         end
 
         # parse the compare key at initialization time
