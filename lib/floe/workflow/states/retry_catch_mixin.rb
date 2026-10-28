@@ -4,6 +4,13 @@ module Floe
   class Workflow
     module States
       module RetryCatchMixin
+        # A "States.ALL" Retrier or Catcher matches every error so it must be last,
+        # otherwise it would hide any of the ones after it.
+        def validate_state_retry_catch!
+          validate_states_all_last!("Retry", self.retry)
+          validate_states_all_last!("Catch", self.catch)
+        end
+
         def find_retrier(error)
           self.retry.detect { |r| r.match_error?(error) }
         end
@@ -42,6 +49,13 @@ module Floe
           context.logger.info("Running state: [#{long_name}] with input [#{context.json_input}]...CatchError - next state: [#{context.next_state}] output: [#{context.json_output}]")
 
           true
+        end
+
+        def validate_states_all_last!(field_name, matchers)
+          return if matchers.none? { |matcher| matcher.error_equals.include?("States.ALL") }
+          return if matchers.last.error_equals.include?("States.ALL") && matchers[0..-2].none? { |matcher| matcher.error_equals.include?("States.ALL") }
+
+          invalid_field_error!(field_name, nil, "must only have \"States.ALL\" in the last #{field_name == "Retry" ? "Retrier" : "Catcher"}")
         end
 
         def fail_workflow!(context, error)

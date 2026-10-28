@@ -12,6 +12,13 @@ module Floe
 
         error_equals.include?(error)
       end
+
+      private
+
+      def validate_error_equals!
+        missing_field_error!("ErrorEquals") if !error_equals.kind_of?(Array) || error_equals.empty?
+        invalid_field_error!("ErrorEquals", nil, "must contain \"States.ALL\" alone") if error_equals.include?("States.ALL") && error_equals.size > 1
+      end
     end
   end
 end

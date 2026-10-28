@@ -26,6 +26,46 @@ RSpec.describe Floe::Workflow::States::Task do
       end
     end
 
+    context "with HeartbeatSeconds" do
+      let(:payload) { {"FirstState" => {"Type" => "Task", "Resource" => "docker://hello-world", "HeartbeatSeconds" => heartbeat_seconds, "TimeoutSeconds" => timeout_seconds, "End" => true}.compact} }
+      let(:timeout_seconds) { 10 }
+
+      context "that is smaller than TimeoutSeconds" do
+        let(:heartbeat_seconds) { 5 }
+        it { expect { workflow }.not_to raise_error }
+      end
+
+      context "without TimeoutSeconds" do
+        let(:heartbeat_seconds) { 5 }
+        let(:timeout_seconds)   { nil }
+        it { expect { workflow }.not_to raise_error }
+      end
+
+      context "that is equal to TimeoutSeconds" do
+        let(:heartbeat_seconds) { 10 }
+        it { expect { workflow }.to raise_error(Floe::InvalidWorkflowError, "States.FirstState field \"HeartbeatSeconds\" value \"10\" must be smaller than \"TimeoutSeconds\"") }
+      end
+
+      context "that is larger than TimeoutSeconds" do
+        let(:heartbeat_seconds) { 11 }
+        it { expect { workflow }.to raise_error(Floe::InvalidWorkflowError, "States.FirstState field \"HeartbeatSeconds\" value \"11\" must be smaller than \"TimeoutSeconds\"") }
+      end
+
+      [-1, 0, 1.5, "5"].each do |value|
+        context "that is #{value.inspect}" do
+          let(:heartbeat_seconds) { value }
+          it { expect { workflow }.to raise_error(Floe::InvalidWorkflowError, "States.FirstState field \"HeartbeatSeconds\" value \"#{value}\" must be positive, non-zero integer") }
+        end
+      end
+    end
+
+    context "with HeartbeatSeconds and HeartbeatSecondsPath" do
+      let(:payload) { {"FirstState" => {"Type" => "Task", "Resource" => "docker://hello-world", "HeartbeatSeconds" => 5, "HeartbeatSecondsPath" => "$.Heartbeat", "End" => true}} }
+      it do
+        expect { workflow }.to raise_error(Floe::InvalidWorkflowError, "States.FirstState field \"HeartbeatSecondsPath\" cannot specify both \"HeartbeatSeconds\" and \"HeartbeatSecondsPath\"")
+      end
+    end
+
     context "with TimeoutSeconds and TimeoutSecondsPath" do
       let(:payload) { {"FirstState" => {"Type" => "Task", "Resource" => "docker://hello-world", "TimeoutSeconds" => 10, "TimeoutSecondsPath" => "$.Timout", "End" => true}} }
       it do
@@ -315,6 +355,33 @@ RSpec.describe Floe::Workflow::States::Task do
         )
       end
 
+      context "with States.ALL" do
+        context "in the last Retrier" do
+          let(:retriers) { [{"ErrorEquals" => ["States.Timeout"]}, {"ErrorEquals" => ["States.ALL"]}] }
+          it { expect { workflow }.not_to raise_error }
+        end
+
+        context "as the only Retrier" do
+          let(:retriers) { [{"ErrorEquals" => ["States.ALL"]}] }
+          it { expect { workflow }.not_to raise_error }
+        end
+
+        context "in a Retrier that is not the last" do
+          let(:retriers) { [{"ErrorEquals" => ["States.ALL"]}, {"ErrorEquals" => ["States.Timeout"]}] }
+          it { expect { workflow }.to raise_error(Floe::InvalidWorkflowError, "States.State field \"Retry\" must only have \"States.ALL\" in the last Retrier") }
+        end
+
+        context "in more than one Retrier" do
+          let(:retriers) { [{"ErrorEquals" => ["States.ALL"]}, {"ErrorEquals" => ["States.ALL"]}] }
+          it { expect { workflow }.to raise_error(Floe::InvalidWorkflowError, "States.State field \"Retry\" must only have \"States.ALL\" in the last Retrier") }
+        end
+
+        context "with another error in the same Retrier" do
+          let(:retriers) { [{"ErrorEquals" => ["States.Timeout", "States.ALL"]}] }
+          it { expect { workflow }.to raise_error(Floe::InvalidWorkflowError, "States.State.Retry.0 field \"ErrorEquals\" must contain \"States.ALL\" alone") }
+        end
+      end
+
       context "with specific errors" do
         let(:retriers) { [{"ErrorEquals" => ["States.Timeout"], "MaxAttempts" => 2}] }
 
@@ -486,6 +553,26 @@ RSpec.describe Floe::Workflow::States::Task do
           )
         end
 
+        context "with States.ALL in the last Catcher" do
+          let(:catchers) { [{"ErrorEquals" => ["States.Timeout"], "Next" => "FirstState"}, {"ErrorEquals" => ["States.ALL"], "Next" => "FirstState"}] }
+          it { expect { workflow }.not_to raise_error }
+        end
+
+        context "with States.ALL in a Catcher that is not the last" do
+          let(:catchers) { [{"ErrorEquals" => ["States.ALL"], "Next" => "FirstState"}, {"ErrorEquals" => ["States.Timeout"], "Next" => "FirstState"}] }
+          it { expect { workflow }.to raise_error(Floe::InvalidWorkflowError, "States.State field \"Catch\" must only have \"States.ALL\" in the last Catcher") }
+        end
+
+        context "with States.ALL in more than one Catcher" do
+          let(:catchers) { [{"ErrorEquals" => ["States.ALL"], "Next" => "FirstState"}, {"ErrorEquals" => ["States.ALL"], "Next" => "FirstState"}] }
+          it { expect { workflow }.to raise_error(Floe::InvalidWorkflowError, "States.State field \"Catch\" must only have \"States.ALL\" in the last Catcher") }
+        end
+
+        context "with States.ALL and another error in the same Catcher" do
+          let(:catchers) { [{"ErrorEquals" => ["States.ALL", "States.Timeout"], "Next" => "FirstState"}] }
+          it { expect { workflow }.to raise_error(Floe::InvalidWorkflowError, "States.State.Catch.0 field \"ErrorEquals\" must contain \"States.ALL\" alone") }
+        end
+
         context "with invalid next" do
           let(:catchers) { [{"ErrorEquals" => ["States.Timeout"], "Next" => "MissingState"}] }
 
@@ -598,6 +685,34 @@ RSpec.describe Floe::Workflow::States::Task do
       end
     end
 
+    describe "without TimeoutSeconds" do
+      let(:payload) { {"State" => {"Type" => "Task", "Resource" => resource, "End" => true}} }
+
+      it "raises States.Timeout error after the default of 60 seconds" do
+        expect_run_async(input, :running => true)
+
+        Timecop.travel(Time.now.utc - 120) do
+          workflow.start_workflow
+          workflow.step_nonblock
+        end
+
+        workflow.step_nonblock
+
+        expect(ctx.status).to eq("failure")
+        expect(ctx.output).to eq("Error" => "States.Timeout")
+      end
+
+      it "does not time out before the default of 60 seconds" do
+        expect_run_async(input, :running => true)
+
+        workflow.start_workflow
+        workflow.step_nonblock
+
+        expect(ctx.state["TimeoutAt"]).to eq((Time.parse(ctx.state["EnteredTime"]) + 60).iso8601)
+        expect(ctx.status).to eq("running")
+      end
+    end
+
     describe "with TimeoutSecondsPath" do
       let(:timeout_seconds) { 10 }
       let(:input) { {"Timeout" => timeout_seconds} }
@@ -702,9 +817,9 @@ RSpec.describe Floe::Workflow::States::Task do
       let(:workflow) { make_workflow(ctx, {"State" => {"Type" => "Task", "Resource" => resource, "End" => true}}) }
       let(:state)    { workflow.states_by_name["State"] }
 
-      it "does not set TimeoutAt" do
+      it "defaults TimeoutAt to 60 seconds after EnteredTime" do
         state.send(:set_timeout_at!, ctx)
-        expect(ctx.state).not_to have_key("TimeoutAt")
+        expect(ctx.state["TimeoutAt"]).to eq("2023-01-01T00:01:00Z")
       end
     end
 

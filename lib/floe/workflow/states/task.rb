@@ -8,6 +8,9 @@ module Floe
         include NonTerminalMixin
         include RetryCatchMixin
 
+        # The default TimeoutSeconds when none is given, per the States Language specification
+        DEFAULT_TIMEOUT_SECONDS = 60
+
         attr_reader :credentials, :end, :heartbeat_seconds, :next, :parameters,
                     :result_selector, :resource, :timeout_seconds, :timeout_seconds_path,
                     :retry, :catch, :input_path, :output_path, :result_path
@@ -88,10 +91,8 @@ module Floe
         private
 
         def set_timeout_at!(context)
-          return if timeout_seconds.nil? && timeout_seconds_path.nil?
-
           entered_time = Time.parse(context.state["EnteredTime"])
-          seconds      = timeout_seconds || timeout_seconds_path.value(context, context.input)
+          seconds      = timeout_seconds || (timeout_seconds_path ? timeout_seconds_path.value(context, context.input) : DEFAULT_TIMEOUT_SECONDS)
           raise Floe::PathError, "TimeoutSecondsPath references an invalid value [#{seconds}]" unless seconds.kind_of?(Integer) && seconds > 0
 
           context.state["TimeoutAt"] = (entered_time + seconds).iso8601
@@ -103,6 +104,8 @@ module Floe
           validate_state_next!(workflow)
           validate_state_timeout_seconds!(workflow)
           validate_state_timeout_seconds_path!(workflow)
+          validate_state_heartbeat_seconds!
+          validate_state_retry_catch!
         end
 
         def validate_state_timeout_seconds!(workflow)
@@ -116,6 +119,14 @@ module Floe
           return if @timeout_seconds_path.nil? || @timeout_seconds.nil?
 
           invalid_field_error!("TimeoutSecondsPath", nil, "cannot specify both \"TimeoutSeconds\" and \"TimeoutSecondsPath\"")
+        end
+
+        def validate_state_heartbeat_seconds!
+          invalid_field_error!("HeartbeatSecondsPath", nil, "cannot specify both \"HeartbeatSeconds\" and \"HeartbeatSecondsPath\"") if @heartbeat_seconds && payload["HeartbeatSecondsPath"]
+          return if @heartbeat_seconds.nil?
+
+          invalid_field_error!("HeartbeatSeconds", @heartbeat_seconds, "must be positive, non-zero integer") unless @heartbeat_seconds.kind_of?(Integer) && @heartbeat_seconds > 0
+          invalid_field_error!("HeartbeatSeconds", @heartbeat_seconds, "must be smaller than \"TimeoutSeconds\"") if @timeout_seconds && @heartbeat_seconds >= @timeout_seconds
         end
 
         def success?(context)

@@ -16,7 +16,7 @@ module Floe
         @next         = payload["Next"]
         @result_path  = ReferencePath.new(payload.fetch("ResultPath", "$"))
 
-        missing_field_error!("ErrorEquals") if !@error_equals.kind_of?(Array) || @error_equals.empty?
+        validate_error_equals!
         validate_state_next!(workflow)
       end
 
